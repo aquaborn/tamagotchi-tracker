@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>TamaGuardian - Tamagotchi</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 20px;
+            overflow: hidden;
+        }
+        
+        .container {
+            max-width: 400px;
+            width: 100%;
+            text-align: center;
+        }
+        
+        .stats {
+            display: flex;
+            justify-content: space-around;
+            margin-bottom: 20px;
+            background: #16213e;
+            padding: 15px;
+            border-radius: 10px;
+            border: 2px solid #0f3460;
+        }
+        
+        .stat {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .stat-icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 18px;
+            font-weight: bold;
+        }
+        
+        .pet-container {
+            width: 200px;
+            height: 200px;
+            margin: 20px auto;
+            position: relative;
+            background: #0f3460;
+            border-radius: 20px;
+            border: 3px solid #e94560;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        /* Pixel Art Pet */
+        .pet {
+            image-rendering: pixelated;
+            image-rendering: crisp-edges;
+            width: 64px;
+            height: 64px;
+            position: relative;
+            animation: bounce 1s infinite;
+        }
+        
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+        
+        .pet.eating {
+            animation: eat 0.5s infinite;
+        }
+        
+        @keyframes eat {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-10deg); }
+            75% { transform: rotate(10deg); }
+        }
+        
+        .pet.sleeping {
+            animation: sleep 2s infinite;
+        }
+        
+        @keyframes sleep {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        
+        .pet.playing {
+            animation: play 0.3s infinite;
+        }
+        
+        @keyframes play {
+            0%, 100% { transform: translateX(0) rotate(0deg); }
+            25% { transform: translateX(-10px) rotate(-10deg); }
+            75% { transform: translateX(10px) rotate(10deg); }
+        }
+        
+        /* Pixel art using CSS */
+        .pixel-pet {
+            width: 64px;
+            height: 64px;
+            position: relative;
+            image-rendering: pixelated;
+        }
+        
+        .pixel-pet .body {
+            position: absolute;
+            width: 40px;
+            height: 36px;
+            background: #ffb347;
+            border-radius: 8px 8px 4px 4px;
+            top: 16px;
+            left: 12px;
+            box-shadow: inset -4px -4px 0 #cc8030;
+        }
+        
+        .pixel-pet .ear-left {
+            position: absolute;
+            width: 12px;
+            height: 16px;
+            background: #ffb347;
+            top: 4px;
+            left: 8px;
+            border-radius: 4px 4px 0 0;
+        }
+        
+        .pixel-pet .ear-right {
+            position: absolute;
+            width: 12px;
+            height: 16px;
+            background: #ffb347;
+            top: 4px;
+            right: 8px;
+            border-radius: 4px 4px 0 0;
+        }
+        
+        .pixel-pet .eye-left {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #333;
+            border-radius: 50%;
+            top: 24px;
+            left: 20px;
+        }
+        
+        .pixel-pet .eye-right {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background: #333;
+            border-radius: 50%;
+            top: 24px;
+            right: 20px;
+        }
+        
+        .pixel-pet .nose {
+            position: absolute;
+            width: 6px;
+            height: 4px;
+            background: #ff6b6b;
+            border-radius: 2px;
+            top: 34px;
+            left: 29px;
+        }
+        
+        .pixel-pet .mouth {
+            position: absolute;
+            width: 12px;
+            height: 4px;
+            background: #333;
+            border-radius: 0 0 4px 4px;
+            top: 40px;
+            left: 26px;
+        }
+        
+        .pixel-pet .cheek-left {
+            position: absolute;
+            width: 8px;
+            height: 4px;
+            background: #ff9999;
+            border-radius: 50%;
+            top: 36px;
+            left: 12px;
+        }
+        
+        .pixel-pet .cheek-right {
+            position: absolute;
+            width: 8px;
+            height: 4px;
+            background: #ff9999;
+            border-radius: 50%;
+            top: 36px;
+            right: 12px;
+        }
+        
+        .pixel-pet .tail {
+            position: absolute;
+            width: 8px;
+            height: 16px;
+            background: #ffb347;
+            top: 20px;
+            right: 0;
+            border-radius: 4px;
+            animation: wag 0.5s infinite;
+        }
+        
+        @keyframes wag {
+            0%, 100% { transform: rotate(-10deg); }
+            50% { transform: rotate(10deg); }
+        }
+        
+        .pixel-pet .leg-left {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #ffb347;
+            bottom: 4px;
+            left: 16px;
+            border-radius: 0 0 4px 4px;
+        }
+        
+        .pixel-pet .leg-right {
+            position: absolute;
+            width: 12px;
+            height: 12px;
+            background: #ffb347;
+            bottom: 4px;
+            right: 16px;
+            border-radius: 0 0 4px 4px;
+        }
+        
+        .buttons {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn {
+            padding: 15px 10px;
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: bold;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: transform 0.1s, box-shadow 0.1s;
+            text-transform: uppercase;
+        }
+        
+        .btn:active {
+            transform: scale(0.95);
+        }
+        
+        .btn-feed {
+            background: #ff6b6b;
+            color: white;
+            box-shadow: 0 4px 0 #cc4444;
+        }
+        
+        .btn-play {
+            background: #4ecdc4;
+            color: white;
+            box-shadow: 0 4px 0 #2a9d8f;
+        }
+        
+        .btn-sleep {
+            background: #a29bfe;
+            color: white;
+            box-shadow: 0 4px 0 #6c5ce7;
+        }
+        
+        .status {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #888;
+            min-height: 20px;
+        }
+        
+        .loading {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #1a1a2e;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading.hidden {
+            display: none;
+        }
+        
+        .heart {
+            color: #e94560;
+            animation: heartbeat 1s infinite;
+        }
+        
+        @keyframes heartbeat {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+    </style>
+</head>
+<body>
+    <div class="loading" id="loading">
+        <div class="heart">❤️</div>
+    </div>
+    
+    <div class="container">
+        <h1>TamaGuardian</h1>
+        
+        <div class="stats">
+            <div class="stat">
+                <span class="stat-icon">🍖</span>
+                <span class="stat-value" id="hunger">100</span>
+            </div>
+            <div class="stat">
+                <span class="stat-icon">⚡</span>
+                <span class="stat-value" id="energy">100</span>
+            </div>
+            <div class="stat">
+                <span class="stat-icon">😊</span>
+                <span class="stat-value" id="happiness">100</span>
+            </div>
+        </div>
+        
+        <div class="pet-container">
+            <div class="pixel-pet" id="pet">
+                <div class="ear-left"></div>
+                <div class="ear-right"></div>
+                <div class="body"></div>
+                <div class="eye-left"></div>
+                <div class="eye-right"></div>
+                <div class="nose"></div>
+                <div class="mouth"></div>
+                <div class="cheek-left"></div>
+                <div class="cheek-right"></div>
+                <div class="tail"></div>
+                <div class="leg-left"></div>
+                <div class="leg-right"></div>
+            </div>
+        </div>
+        
+        <div class="buttons">
+            <button class="btn btn-feed" onclick="performAction('feed')">🍖 Feed</button>
+            <button class="btn btn-play" onclick="performAction('play')">🎮 Play</button>
+            <button class="btn btn-sleep" onclick="performAction('sleep')">💤 Sleep</button>
+        </div>
+        
+        <div class="status" id="status">Pet is happy!</div>
+    </div>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+        
+        let currentAction = null;
+        let authToken = null;
+        
+        async function authenticate() {
+            try {
+                const response = await fetch('/v1/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ init_data: tg.initData })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    authToken = data.token;
+                    return true;
+                }
+            } catch (e) {
+                console.error('Auth error:', e);
+            }
+            return false;
+        }
+        
+        async function performAction(action) {
+            const statusEl = document.getElementById('status');
+            const petEl = document.getElementById('pet');
+            
+            currentAction = action;
+            petEl.className = 'pixel-pet ' + action;
+            
+            const messages = {
+                feed: 'Yummy! 🍖',
+                play: 'Fun time! 🎮',
+                sleep: 'Zzz... 💤'
+            };
+            
+            statusEl.textContent = messages[action];
+            
+            try {
+                const response = await fetch('/v1/pet/action', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Bearer ' + authToken
+                    },
+                    body: JSON.stringify({ action })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStats(data.pet);
+                    statusEl.textContent = getStatusMessage(data.pet);
+                } else {
+                    statusEl.textContent = 'Error! Try again';
+                }
+            } catch (e) {
+                console.error(e);
+                statusEl.textContent = 'Connection error';
+            }
+            
+            setTimeout(() => {
+                petEl.className = 'pixel-pet';
+            }, 2000);
+            
+            tg.HapticFeedback.impactOccurred('medium');
+        }
+        
+        function getStatusMessage(pet) {
+            if (pet.hunger < 30) return 'Pet is hungry! 🍖';
+            if (pet.energy < 30) return 'Pet is tired... 💤';
+            if (pet.happiness < 30) return 'Pet is sad... 😢';
+            if (pet.hunger > 80 && pet.energy > 80 && pet.happiness > 80) return 'Pet is happy! ❤️';
+            return 'Pet is okay';
+        }
+        
+        function updateStats(pet) {
+            document.getElementById('hunger').textContent = pet.hunger;
+            document.getElementById('energy').textContent = pet.energy;
+            document.getElementById('happiness').textContent = pet.happiness;
+        }
+        
+        async function loadState() {
+            // Сначала аутентифицируемся
+            const authenticated = await authenticate();
+            if (!authenticated) {
+                document.getElementById('status').textContent = 'Auth error! Try again';
+                document.getElementById('loading').classList.add('hidden');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/v1/pet/state', {
+                    headers: {
+                        'Authorization': 'Bearer ' + authToken
+                    }
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    updateStats(data.pet);
+                    document.getElementById('status').textContent = getStatusMessage(data.pet);
+                }
+            } catch (e) {
+                console.error(e);
+            }
+            
+            document.getElementById('loading').classList.add('hidden');
+        }
+        
+        loadState();
+    </script>
+</body>
+</html>
