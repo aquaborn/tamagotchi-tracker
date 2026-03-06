@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List
 
 
 class Settings(BaseSettings):
@@ -10,6 +11,10 @@ class Settings(BaseSettings):
     
     # ✅ Обязательные поля
     bot_token: str
+    database_url: str = "postgresql+asyncpg://postgres:postgres@db:5432/tamagotchi"
+    
+    # Админы (Telegram IDs)
+    admin_ids: List[int] = [84481976]
 
 
 # ✅ Экземпляр на уровне модуля

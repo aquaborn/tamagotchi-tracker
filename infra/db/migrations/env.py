@@ -16,7 +16,9 @@ if config.config_file_name is not None:
 
 # add your model's MetaData object here
 # for 'autogenerate' support
-from app.models.pet import Base  # Adjust import path as needed
+from app.models.pet import Base, PetModel
+from app.models.user import User, VPNConfig, Achievement
+from app.models.shop import ShopItem, UserInventory, ActiveBoost, StarTransaction
 target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
