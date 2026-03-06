@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from typing import List
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     
     # Админы (Telegram IDs)
     admin_ids: List[int] = [84481976]
+    internal_api_token: Optional[str] = None
 
 
 # ✅ Экземпляр на уровне модуля

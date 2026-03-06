@@ -1,14 +1,15 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
 
-from app.deps.auth import get_current_user_id
+from app.deps.auth import get_current_user_id, require_internal_api_token
 from app.deps.db import get_db
 from app.models.user import User, VPNConfig, Achievement
+from app.models.shop import StarTransaction
 from app.services.vpn_rewards import (
     generate_referral_code,
     generate_amnezia_config,
@@ -418,14 +419,15 @@ async def claim_achievement_reward(
 
 
 class AddVPNHoursRequest(BaseModel):
-    user_id: int
-    hours: int
-    reason: str
+    user_id: int = Field(gt=0)
+    hours: int = Field(gt=0, le=24 * 365)
+    reason: str = Field(min_length=3, max_length=128)
 
 
 @router.post("/add-vpn-hours")
 async def add_vpn_hours(
     request: AddVPNHoursRequest,
+    _: None = Depends(require_internal_api_token),
     db: AsyncSession = Depends(get_db)
 ):
     """Добавить VPN часы (для внутреннего использования, например после покупки)"""
@@ -847,8 +849,9 @@ async def get_stars_packages():
 
 
 class AddStarsRequest(BaseModel):
-    amount: int
-    telegram_payment_id: Optional[str] = None
+    user_id: int = Field(gt=0)
+    amount: int = Field(gt=0)
+    telegram_payment_id: str = Field(min_length=1, max_length=255)
 
 
 class CreateInvoiceRequest(BaseModel):
@@ -904,13 +907,28 @@ async def create_stars_invoice(
 @router.post("/stars/add")
 async def add_stars(
     request: AddStarsRequest,
-    user_id: int = Depends(get_current_user_id),
+    _: None = Depends(require_internal_api_token),
     db: AsyncSession = Depends(get_db)
 ):
-    """Add stars to user balance (called after Telegram payment)"""
-    user = await get_or_create_user(user_id, db)
-    
-    # Calculate bonus based on amount
+    """Add stars to user balance (internal endpoint, idempotent by payment ID)"""
+    existing_payment = await db.execute(
+        select(StarTransaction).where(
+            StarTransaction.telegram_payment_id == request.telegram_payment_id
+        )
+    )
+    existing_tx = existing_payment.scalar_one_or_none()
+    if existing_tx:
+        user_result = await db.execute(select(User).where(User.id == existing_tx.user_id))
+        existing_user = user_result.scalar_one_or_none()
+        return {
+            "success": True,
+            "already_processed": True,
+            "stars_added": 0,
+            "new_balance": existing_user.stars_balance if existing_user else 0,
+        }
+
+    user = await get_or_create_user(request.user_id, db)
+
     bonus = 0
     if request.amount >= 1000:
         bonus = int(request.amount * 0.25)
@@ -923,17 +941,34 @@ async def add_stars(
     
     total = request.amount + bonus
     user.stars_balance += total
-    
+
+    transaction = StarTransaction(
+        user_id=user.id,
+        telegram_payment_id=request.telegram_payment_id,
+        stars_amount=total,
+        purchase_type="stars_pack",
+        purchase_description=f"Telegram Stars top-up {request.amount} (+{bonus})",
+        status="completed",
+        completed_at=datetime.now(timezone.utc),
+    )
+    db.add(transaction)
     await db.commit()
-    
-    logger.info(f"User {user_id} bought {request.amount} stars (+{bonus} bonus) = {total}")
-    
+
+    logger.info(
+        "User %s bought %s stars (+%s bonus) = %s",
+        request.user_id,
+        request.amount,
+        bonus,
+        total,
+    )
+
     return {
         "success": True,
         "stars_added": total,
         "base": request.amount,
         "bonus": bonus,
-        "new_balance": user.stars_balance
+        "new_balance": user.stars_balance,
+        "already_processed": False,
     }
 
 

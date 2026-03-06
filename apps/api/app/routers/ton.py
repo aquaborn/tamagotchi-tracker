@@ -148,43 +148,10 @@ async def verify_payment(
     4. Store transaction hash to prevent double-spending
     """
     
-    user = await get_or_create_user(user_id, db)
-    
-    # TODO: In production, verify transaction using TON API
-    # Example with toncenter:
-    # async with aiohttp.ClientSession() as session:
-    #     async with session.get(
-    #         f"https://toncenter.com/api/v2/getTransactions",
-    #         params={"address": MERCHANT_WALLET, "limit": 20}
-    #     ) as resp:
-    #         data = await resp.json()
-    #         # Find and verify transaction
-    
-    # For now, simulate verification (REMOVE IN PRODUCTION)
-    logger.warning(f"TON payment verification requested: tx={request.tx_hash}, user={user_id}")
-    
-    # Find matching package by amount
-    package = next(
-        (p for p in TON_PACKAGES if abs(p["ton_amount"] - request.expected_amount) < 0.01),
-        None
+    raise HTTPException(
+        status_code=501,
+        detail="TON payment verification is disabled until secure on-chain validation is implemented",
     )
-    
-    if not package:
-        raise HTTPException(status_code=400, detail="Invalid payment amount")
-    
-    # Credit stars to user
-    stars_to_add = package["stars"] + package["bonus"]
-    user.stars_balance = (user.stars_balance or 0) + stars_to_add
-    
-    await db.commit()
-    
-    return {
-        "success": True,
-        "stars_added": stars_to_add,
-        "new_balance": user.stars_balance,
-        "tx_hash": request.tx_hash,
-        "message": f"Successfully added {stars_to_add} stars!"
-    }
 
 
 @router.get("/balance")
@@ -219,46 +186,7 @@ async def ton_webhook(
     - Third-party services like GetBlock
     """
     
-    # Verify webhook signature (implement based on your provider)
-    # ...
-    
-    logger.info(f"TON webhook received: {data}")
-    
-    # Parse transaction data
-    tx_hash = data.get("tx_hash")
-    from_address = data.get("from")
-    amount = data.get("amount", 0) / 1e9  # Convert from nanoTON
-    comment = data.get("comment", "")
-    
-    # Parse comment to get user ID
-    if comment.startswith("tamagochi:"):
-        parts = comment.split(":")
-        if len(parts) >= 2:
-            try:
-                user_telegram_id = int(parts[1])
-                
-                # Credit stars automatically
-                result = await db.execute(
-                    select(User).where(User.telegram_id == user_telegram_id)
-                )
-                user = result.scalar_one_or_none()
-                
-                if user:
-                    # Find package by amount
-                    package = next(
-                        (p for p in TON_PACKAGES if abs(p["ton_amount"] - amount) < 0.01),
-                        None
-                    )
-                    
-                    if package:
-                        stars_to_add = package["stars"] + package["bonus"]
-                        user.stars_balance = (user.stars_balance or 0) + stars_to_add
-                        await db.commit()
-                        
-                        logger.info(f"Auto-credited {stars_to_add} stars to user {user_telegram_id}")
-                        return {"success": True, "stars_added": stars_to_add}
-            
-            except (ValueError, IndexError) as e:
-                logger.error(f"Failed to parse webhook comment: {e}")
-    
-    return {"success": False, "error": "Could not process payment"}
+    raise HTTPException(
+        status_code=501,
+        detail="TON webhook handler is disabled until signature + replay-safe verification is implemented",
+    )

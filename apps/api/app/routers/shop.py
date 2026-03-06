@@ -1,12 +1,12 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 import logging
 
-from app.deps.auth import get_current_user_id
+from app.deps.auth import get_current_user_id, require_internal_api_token
 from app.deps.db import get_db
 from app.models.user import User
 from app.models.shop import (
@@ -40,8 +40,8 @@ class ShopItemResponse(BaseModel):
 
 
 class PurchaseRequest(BaseModel):
-    item_id: int
-    quantity: int = 1
+    item_id: int = Field(gt=0)
+    quantity: int = Field(default=1, ge=1, le=100)
 
 
 class StarsPurchaseRequest(BaseModel):
@@ -255,14 +255,14 @@ async def buy_with_balance(
     
     # Списываем звёзды
     user.stars_balance -= total_price
-    user.total_purchases += 1
+    user.total_purchases += request.quantity
     
     # Barrel progress
-    user.barrel_progress += 1
+    user.barrel_progress += request.quantity
     barrel_reward = None
     if user.barrel_progress >= 100:
         user.barrel_completions += 1
-        user.barrel_progress = 0
+        user.barrel_progress -= 100
         user.vpn_hours_balance += 720  # 1 month VPN
         barrel_reward = "1 month VPN!"
     
@@ -377,14 +377,26 @@ async def purchase_item(
 
 @router.post("/confirm-purchase")
 async def confirm_purchase(
-    item_id: int,
-    quantity: int = 1,
-    telegram_payment_id: str = None,
-    user_id: int = Depends(get_current_user_id),
+    item_id: int = Query(gt=0),
+    user_telegram_id: int = Query(gt=0),
+    quantity: int = Query(default=1, ge=1, le=100),
+    telegram_payment_id: str = Query(min_length=1, max_length=255),
+    _: None = Depends(require_internal_api_token),
     db: AsyncSession = Depends(get_db)
 ):
     """Подтвердить покупку после оплаты звёздами"""
-    user = await get_or_create_user(user_id, db)
+    user = await get_or_create_user(user_telegram_id, db)
+
+    existing_tx_result = await db.execute(
+        select(StarTransaction).where(StarTransaction.telegram_payment_id == telegram_payment_id)
+    )
+    existing_tx = existing_tx_result.scalar_one_or_none()
+    if existing_tx:
+        return {
+            "success": True,
+            "already_processed": True,
+            "message": "Payment already processed",
+        }
     
     # Получаем предмет
     result = await db.execute(
@@ -485,12 +497,13 @@ async def confirm_purchase(
             "reward": "720 часов VPN (1 месяц)",
             "completions_total": user.barrel_completions
         }
-        logger.info(f"User {user_id} filled barrel #{user.barrel_completions}! +720h VPN")
+        logger.info(f"User {user_telegram_id} filled barrel #{user.barrel_completions}! +720h VPN")
     
     await db.commit()
     
     return {
         "success": True,
+        "already_processed": False,
         "message": message,
         "item": item.name,
         "quantity": quantity,
@@ -537,45 +550,39 @@ async def use_item(
     
     # Применяем эффект
     message = ""
+    def with_updates(**kwargs) -> PetState:
+        return PetState(
+            hunger=kwargs.get("hunger", pet_state.hunger),
+            energy=kwargs.get("energy", pet_state.energy),
+            happiness=kwargs.get("happiness", pet_state.happiness),
+            hygiene=kwargs.get("hygiene", pet_state.hygiene),
+            health=kwargs.get("health", pet_state.health),
+            discipline=kwargs.get("discipline", pet_state.discipline),
+            is_sick=kwargs.get("is_sick", pet_state.is_sick),
+            is_sleeping=kwargs.get("is_sleeping", pet_state.is_sleeping),
+            light_off=kwargs.get("light_off", pet_state.light_off),
+            needs_attention=kwargs.get("needs_attention", pet_state.needs_attention),
+            last_tick_at=pet_state.last_tick_at
+        )
     
     if item.effect_type == "hunger_restore":
         new_hunger = clamp(pet_state.hunger + item.effect_value)
-        pet_state = PetState(
-            hunger=new_hunger,
-            energy=pet_state.energy,
-            happiness=pet_state.happiness,
-            last_tick_at=pet_state.last_tick_at
-        )
+        pet_state = with_updates(hunger=new_hunger)
         message = f"Сытость восстановлена до {new_hunger}!"
         
     elif item.effect_type == "energy_restore":
         new_energy = clamp(pet_state.energy + item.effect_value)
-        pet_state = PetState(
-            hunger=pet_state.hunger,
-            energy=new_energy,
-            happiness=pet_state.happiness,
-            last_tick_at=pet_state.last_tick_at
-        )
+        pet_state = with_updates(energy=new_energy)
         message = f"Энергия восстановлена до {new_energy}!"
         
     elif item.effect_type == "hunger_happiness_restore":
         new_hunger = clamp(pet_state.hunger + item.effect_value)
         new_happiness = clamp(pet_state.happiness + 10)
-        pet_state = PetState(
-            hunger=new_hunger,
-            energy=pet_state.energy,
-            happiness=new_happiness,
-            last_tick_at=pet_state.last_tick_at
-        )
+        pet_state = with_updates(hunger=new_hunger, happiness=new_happiness)
         message = f"Сытость: {new_hunger}, Счастье: {new_happiness}!"
         
     elif item.effect_type == "full_restore":
-        pet_state = PetState(
-            hunger=100,
-            energy=100,
-            happiness=100,
-            last_tick_at=pet_state.last_tick_at
-        )
+        pet_state = with_updates(hunger=100, energy=100, happiness=100, hygiene=100, health=100)
         message = "Все статы восстановлены до 100!"
     else:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя использовать")
@@ -792,9 +799,9 @@ MARKET_COMMISSION = 0.03  # 3% комиссия
 
 
 class CreateListingRequest(BaseModel):
-    inventory_id: int
-    price: int
-    quantity: int = 1
+    inventory_id: int = Field(gt=0)
+    price: int = Field(ge=1)
+    quantity: int = Field(default=1, ge=1, le=100)
 
 
 class BuyListingRequest(BaseModel):
@@ -990,17 +997,21 @@ async def buy_from_market(
     # Записываем транзакцию
     tx = StarTransaction(
         user_id=buyer.id,
-        amount=-listing.price,
-        transaction_type="market_purchase",
-        description=f"Bought from market (listing #{listing.id})"
+        stars_amount=listing.price,
+        purchase_type="market_purchase",
+        purchase_description=f"Bought from market (listing #{listing.id})",
+        status="completed",
+        completed_at=datetime.now(timezone.utc),
     )
     db.add(tx)
     
     tx_seller = StarTransaction(
         user_id=seller.id,
-        amount=seller_receives,
-        transaction_type="market_sale",
-        description=f"Market sale (commission: {commission} ⭐)"
+        stars_amount=seller_receives,
+        purchase_type="market_sale",
+        purchase_description=f"Market sale (commission: {commission} ⭐)",
+        status="completed",
+        completed_at=datetime.now(timezone.utc),
     )
     db.add(tx_seller)
     

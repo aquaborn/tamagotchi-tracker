@@ -4,6 +4,10 @@ import logging
 
 from app.deps.auth import create_access_token
 from app.settings import get_settings
+from packages.core.core.security.tma_init_data import (
+    validate_and_parse_init_data,
+    TmaAuthError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -17,37 +21,22 @@ class AuthRequest(BaseModel):
 async def login(auth_req: AuthRequest):
     """Аутентификация через Telegram WebApp initData"""
     settings = get_settings()
-    
-    logger.info(f"Bot token: {settings.bot_token[:10]}... if available")
-    logger.info(f"Debug mode: {settings.debug}")
-    
-    # Всегда используем упрощённую авторизацию для разработки
-    # (Telegram Mini App не требует полной валидации hash в dev режиме)
+
     try:
-        from urllib.parse import parse_qs
-        import json
-        
-        params = parse_qs(auth_req.init_data)
-        user_data = params.get('user', [None])[0]
-        
-        if user_data:
-            user_obj = json.loads(user_data)
-            user_id = int(user_obj['id'])
-            
-            # Создаём JWT токен
-            token = create_access_token(data={"user_id": user_id})
-            
-            logger.info(f"Auth successful for user {user_id}")
-            
-            return {
-                "token": token,
-                "user_id": user_id,
-            }
-        else:
-            raise HTTPException(status_code=401, detail="No user data in initData")
-            
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Auth error: {e}")
-        raise HTTPException(status_code=401, detail=f"Auth failed: {str(e)}")
+        parsed = validate_and_parse_init_data(
+            init_data_raw=auth_req.init_data,
+            bot_token=settings.bot_token,
+            expires_in_sec=3600,
+        )
+        user_id = parsed.user.id
+        token = create_access_token(data={"user_id": user_id})
+        logger.info("Auth successful for user %s", user_id)
+        return {
+            "token": token,
+            "user_id": user_id,
+        }
+    except TmaAuthError:
+        raise HTTPException(status_code=401, detail="Invalid Telegram initData")
+    except Exception:
+        logger.exception("Auth error")
+        raise HTTPException(status_code=401, detail="Auth failed")

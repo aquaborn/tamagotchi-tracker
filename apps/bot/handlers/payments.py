@@ -5,6 +5,7 @@ from aiogram import Router, types, F
 from aiogram.types import LabeledPrice, PreCheckoutQuery
 import logging
 import httpx
+from settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,13 @@ STAR_PRICES = {
 }
 
 API_URL = "http://api:8000"
+
+
+def _internal_headers() -> dict:
+    headers = {}
+    if settings.internal_api_token:
+        headers["X-Internal-Token"] = settings.internal_api_token
+    return headers
 
 
 async def send_invoice(message: types.Message, product_id: str):
@@ -83,7 +91,8 @@ async def process_successful_payment(message: types.Message):
                         "user_id": user_id,
                         "hours": product["hours"],
                         "reason": f"purchase_{product_id}"
-                    }
+                    },
+                    headers=_internal_headers(),
                 )
             # Если это покупка внутриигровых монет
             elif product_id.startswith("coins_"):
@@ -91,10 +100,11 @@ async def process_successful_payment(message: types.Message):
                 response = await client.post(
                     f"{API_URL}/v1/rewards/stars/add",
                     json={
+                        "user_id": user_id,
                         "amount": coins_amount,
                         "telegram_payment_id": payment.telegram_payment_charge_id
                     },
-                    headers={"X-User-Id": str(user_id)}
+                    headers=_internal_headers(),
                 )
                 if response.status_code == 200:
                     data = response.json()
@@ -112,10 +122,11 @@ async def process_successful_payment(message: types.Message):
                     f"{API_URL}/v1/shop/confirm-purchase",
                     params={
                         "item_id": product.get("item_id", 1),
+                        "user_telegram_id": user_id,
                         "quantity": 1,
                         "telegram_payment_id": payment.telegram_payment_charge_id
                     },
-                    headers={"X-User-Id": str(user_id)}
+                    headers=_internal_headers(),
                 )
                 
                 # Проверяем бочку

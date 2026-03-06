@@ -22,8 +22,8 @@ docker-compose -f compose.yaml ps
 
 echo.
 echo Проект запущен!
-echo API доступно на http://localhost:8000
-echo База данных доступна на http://localhost:5432
+echo API доступно на http://localhost:8080
+echo База данных доступна на localhost:5433
 echo.
 echo Для остановки используйте: docker-compose -f compose.yaml down
 echo.

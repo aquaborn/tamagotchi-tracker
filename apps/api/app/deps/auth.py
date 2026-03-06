@@ -2,19 +2,12 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+import hmac
 
 import jwt
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header, HTTPException
 from jwt import PyJWTError
 from pydantic_settings import BaseSettings, SettingsConfigDict
-
-# ✅ Правильный отдельный импорт
-from packages.core.core.security.tma_init_data import (
-    validate_and_parse_init_data,
-    TmaInitData,
-    TmaAuthError,  # ✅ Добавлено в импорт, а не висит отдельно
-)
-
 
 class Settings(BaseSettings):
     # ✅ Только model_config для Pydantic v2
@@ -27,6 +20,7 @@ class Settings(BaseSettings):
     jwt_secret_key: str = "your-secret-key-change-in-production"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
+    internal_api_token: Optional[str] = None
 
 
 # Глобальный экземпляр настроек
@@ -73,8 +67,17 @@ def get_current_user_id(
         )
     
     try:
-        # Убираем префикс "Bearer " если есть
-        token = authorization.replace("Bearer ", "")
+        if not authorization.startswith("Bearer "):
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid authorization scheme"
+            )
+        token = authorization[len("Bearer "):].strip()
+        if not token:
+            raise HTTPException(
+                status_code=401,
+                detail="Token is required"
+            )
         
         jwt_settings = get_jwt_settings()
         payload = jwt.decode(
@@ -96,4 +99,20 @@ def get_current_user_id(
         raise HTTPException(
             status_code=401,
             detail="Invalid or expired token"
+        )
+
+
+def require_internal_api_token(
+    x_internal_token: Optional[str] = Header(default=None, alias="X-Internal-Token")
+) -> None:
+    configured_token = settings.internal_api_token
+    if not configured_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Internal API token is not configured"
+        )
+    if not x_internal_token or not hmac.compare_digest(x_internal_token, configured_token):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid internal API token"
         )
