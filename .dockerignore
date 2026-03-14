@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.env
+.git/
+*.md
+.DS_Store
+node_modules/
+dist/
+build/

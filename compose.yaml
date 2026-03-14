@@ -1,0 +1,49 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8000"
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/tamagotchi
+      - DEBUG=True
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY}
+      - VPN_SERVER_IP=${VPN_SERVER_IP}
+      - VPN_SERVER_SSH_USER=${VPN_SERVER_SSH_USER}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+    depends_on:
+      - db
+    volumes:
+      - ./apps/api:/app
+      - ./packages/core:/app/packages/core
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+  bot:
+    build:
+      context: ./apps/bot
+      dockerfile: Dockerfile
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/tamagotchi
+    depends_on:
+      - db
+    volumes:
+      - ./apps/bot:/app
+      - ./packages/core:/app/packages/core
+    command: python main.py
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: tamagotchi
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

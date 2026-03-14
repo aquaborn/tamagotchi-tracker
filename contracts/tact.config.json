@@ -1,0 +1,14 @@
+{
+  "projects": [
+    {
+      "name": "PixelJetton",
+      "path": "./jetton/PixelJetton.tact",
+      "output": "./build/jetton"
+    },
+    {
+      "name": "PixelPetNFT",
+      "path": "./nft/PixelPetNFT.tact",
+      "output": "./build/nft"
+    }
+  ]
+}
