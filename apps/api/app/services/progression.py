@@ -362,6 +362,39 @@ EXTENDED_SHOP_ITEMS = [
      "min_level": 60},
     
     # ==========================================
+    # ИГРУШКИ (toy) - boost happiness when equipped
+    # ==========================================
+    
+    {"name": "Мячик", "description": "⚽+10% happiness gain! Play time!", "category": "toy", "price_stars": 15,
+     "effect_type": "happiness_bonus", "effect_value": 10, "emoji": "⚽", "rarity": "common"},
+    
+    {"name": "Клубок пряжи", "description": "🧶+15% happiness gain! Cat favorite!", "category": "toy", "price_stars": 20,
+     "effect_type": "happiness_bonus", "effect_value": 15, "emoji": "🧶", "rarity": "common"},
+    
+    {"name": "Плюшевый мишка", "description": "🧸+20% happiness gain! Cuddle buddy!", "category": "toy", "price_stars": 30,
+     "effect_type": "happiness_bonus", "effect_value": 20, "emoji": "🧸", "rarity": "rare"},
+    
+    {"name": "Косточка", "description": "🦴+25% happiness gain! Dog favorite! LVL10+", "category": "toy", "price_stars": 40,
+     "effect_type": "happiness_bonus", "effect_value": 25, "emoji": "🦴", "rarity": "rare",
+     "min_level": 10},
+    
+    {"name": "Мышка-игрушка", "description": "🐭+30% happiness gain! Hunt time! LVL15+", "category": "toy", "price_stars": 50,
+     "effect_type": "happiness_bonus", "effect_value": 30, "emoji": "🐭", "rarity": "epic",
+     "min_level": 15},
+    
+    {"name": "Пёрышко", "description": "🪶+35% happiness gain! Bird play! LVL20+", "category": "toy", "price_stars": 70,
+     "effect_type": "happiness_bonus", "effect_value": 35, "emoji": "🪶", "rarity": "epic",
+     "min_level": 20},
+    
+    {"name": "Баскетбольный мяч", "description": "🏀+40% happiness +5% XP! Sport star! LVL30+", "category": "toy", "price_stars": 100,
+     "effect_type": "sport_ball", "effect_value": 40, "emoji": "🏀", "rarity": "legendary",
+     "min_level": 30},
+    
+    {"name": "Золотой мяч", "description": "🥎+50% happiness +10% XP! Champion! LVL50+", "category": "toy", "price_stars": 200,
+     "effect_type": "golden_ball", "effect_value": 50, "emoji": "🥎", "rarity": "legendary",
+     "min_level": 50},
+    
+    # ==========================================
     # VPN ПАКЕТЫ (vpn) - adds hours directly to balance
     # ==========================================
     
