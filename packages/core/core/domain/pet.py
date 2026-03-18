@@ -17,23 +17,24 @@ DECAY_CONFIG = {
     
     # Энергия - "Ресурс для действий"
     "energy_interval": 2400,        # -1 каждые 40 мин пассивно
-    "energy_sleep_recovery": 12,    # +1 каждые 12 сек во сне (+5/мин)
-    "energy_sleep_light_on": 30,    # +1 каждые 30 сек если свет (медленнее)
+    "energy_sleep_recovery": 5,     # +1 каждые 5 сек во сне с выключенным светом (+12/мин)
+    "energy_sleep_light_on": 10,    # +1 каждые 10 сек если свет включен (+6/мин)
     "energy_awake_recovery": 300,   # +1 каждые 5 мин бодрствуя (очень медленно)
     "energy_min_for_play": 10,      # Минимум для игр
     
-    # Гигиена - "Событийный стат" (почти не падает сама)
-    "hygiene_interval": 7200,       # -1 каждые 2 часа пассивно
+    # Гигиена - "Событийный стат" (медленно падает сама, быстро от действий)
+    "hygiene_interval": 1800,       # -1 каждые 30 мин пассивно (было 2 часа - слишком медленно)
     "hygiene_critical": 30,         # Ниже этого - риск болезни x2, счастье x2
     "hygiene_dirty": 20,            # Ниже этого - "Грязнуля"
     
     # Счастье - "Множитель прогресса"
-    "happiness_hunger_threshold": 40,   # Голод ниже -> счастье падает
-    "happiness_hygiene_threshold": 30,  # Гигиена ниже -> счастье падает  
-    "happiness_energy_threshold": 20,   # Энергия ниже -> счастье падает
+    "happiness_base_decay": 3600,       # -1 каждый час базово (питомцу нужно внимание)
+    "happiness_hunger_threshold": 50,   # Еда ниже 50% -> счастье падает
+    "happiness_hygiene_threshold": 40,  # Гигиена ниже 40% -> счастье падает  
+    "happiness_energy_threshold": 30,   # Энергия ниже 30% -> счастье падает
     "happiness_decay_interval": 600,    # -1 каждые 10 мин при плохих статах
-    "happiness_bonus_threshold": 80,    # Выше этого - бонус к оффлайн доходу
-    "happiness_runaway_threshold": 30,  # Ниже этого - риск побега/болезни
+    "happiness_bonus_threshold": 80,    # Выше 80% - бонус к оффлайн доходу
+    "happiness_runaway_threshold": 30,  # Ниже 30% - риск побега/болезни
     
     # Здоровье - "Защитный слой" (падает только при критических условиях)
     "health_starvation_interval": 1800, # -5 каждые 30 мин если голод < 5
@@ -114,10 +115,10 @@ def apply_tick(state: PetState, now: datetime, weather_multipliers: dict = None)
     if state.is_sleeping:
         # Сон: быстрое восстановление
         if state.light_off:
-            # +1 каждые 12 сек = +5 в минуту
+            # +1 каждые 5 сек = +12 в минуту (полное восстановление за ~8 мин)
             energy_gain = int(dt // cfg["energy_sleep_recovery"])
         else:
-            # Свет мешает: +1 каждые 30 сек = +2 в минуту
+            # Свет мешает: +1 каждые 10 сек = +6 в минуту
             energy_gain = int(dt // cfg["energy_sleep_light_on"])
         new_energy = clamp(state.energy + energy_gain)
     else:
@@ -133,9 +134,12 @@ def apply_tick(state: PetState, now: datetime, weather_multipliers: dict = None)
     new_hygiene = clamp(state.hygiene - hygiene_loss)
     
     # ==================== СЧАСТЬЕ ====================
-    # Падает если другие статы плохие
+    # Базовое падение + ускоренное если другие статы плохие
     happiness_decay_rate = 0
     happiness_multiplier = weather.get("happiness_drain", 1.0)
+    
+    # Базовое падение -1 каждый час (питомцу нужно внимание!)
+    base_happiness_loss = int(dt // cfg.get("happiness_base_decay", 3600))
     
     # Голодный питомец грустит
     if new_hunger < cfg["happiness_hunger_threshold"]:
@@ -157,11 +161,11 @@ def apply_tick(state: PetState, now: datetime, weather_multipliers: dict = None)
     happiness_decay_rate = int(happiness_decay_rate * happiness_multiplier)
     
     # Рассчитываем потерю счастья
-    happiness_loss = 0
+    happiness_loss = base_happiness_loss  # Базовое падение (-1/час)
     if happiness_decay_rate > 0:
-        # -1 каждые 10 мин за каждый фактор
+        # +дополнительно -1 каждые 10 мин за каждый фактор
         ticks = int(dt // cfg["happiness_decay_interval"])
-        happiness_loss = ticks * happiness_decay_rate
+        happiness_loss += ticks * happiness_decay_rate
     
     new_happiness = clamp(state.happiness - happiness_loss)
     

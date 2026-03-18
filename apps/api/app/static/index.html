@@ -1,4 +1,5 @@
 <!DOCTYPE html>
+<!-- VERSION: 2026-03-18-v5-LIGHT-TEST -->
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
@@ -266,6 +267,40 @@
         /* Dark mode for sleeping */
         .pet-arena.dark {
             background: transparent; /* Canvas draws night sky */
+        }
+        
+        .pet-arena.dark::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(to bottom, rgba(5, 5, 30, 0.7) 0%, rgba(10, 10, 40, 0.5) 100%);
+            pointer-events: none;
+            z-index: 10;
+            border-radius: 26px;
+            animation: darkenFade 0.5s ease-in-out;
+        }
+        
+        @keyframes darkenFade {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .pet-arena.dark::after {
+            content: '✨';
+            position: absolute;
+            top: 15px;
+            right: 20px;
+            font-size: 24px;
+            z-index: 11;
+            animation: twinkle 1.5s ease-in-out infinite;
+        }
+        
+        @keyframes twinkle {
+            0%, 100% { opacity: 0.6; transform: scale(1); }
+            50% { opacity: 1; transform: scale(1.2); }
         }
         
         .pet-arena.dark .stars {
@@ -792,7 +827,7 @@
             transform: translateX(-50%);
             width: 130px;
             height: 130px;
-            z-index: 10;
+            z-index: 20;  /* Above dark overlay */
             animation: petBounce 2s ease-in-out infinite;
         }
         
@@ -2464,6 +2499,13 @@
             
             <!-- Weather Overlay -->
             <div class="weather-overlay" id="weatherOverlay"></div>
+            
+            <!-- Dark/Night Overlay for light off mode -->
+            <div id="darkOverlay" style="display:none;position:absolute;top:0;left:0;right:0;bottom:0;background:linear-gradient(to bottom, rgba(5,5,30,0.8) 0%, rgba(10,10,50,0.6) 100%);border-radius:26px;z-index:8;pointer-events:none;">
+                <div style="position:absolute;top:10px;right:15px;font-size:20px;animation:twinkle 1.5s ease-in-out infinite;">✨</div>
+                <div style="position:absolute;top:20px;left:20px;font-size:16px;animation:twinkle 2s ease-in-out infinite 0.5s;">⭐</div>
+                <div style="position:absolute;top:40px;right:40px;font-size:14px;animation:twinkle 1.8s ease-in-out infinite 0.3s;">✨</div>
+            </div>
             <div class="weather-indicator" id="weatherIndicator" style="display: none;">
                 <span id="seasonEmoji">❄️</span>
                 <span id="weatherEmoji">☀️</span>
@@ -2520,7 +2562,7 @@
                 <span class="icon">🛁</span>
                 <span>BATH</span>
             </button>
-            <button class="action-btn light" id="lightBtn" onclick="toggleLight()">
+            <button class="action-btn light" id="lightBtn" onclick="alert('CLICK!'); toggleLight();">
                 <span class="icon">💡</span>
                 <span>LIGHT</span>
             </button>
@@ -4315,6 +4357,63 @@
                     result.squish = 0.95;
                     
                 // ===== DEFAULT IDLE =====
+                } else if (b === 'run') {
+                    // Generic run - used by chick and hedgehog
+                    this.posX += this.direction * 1.2;
+                    if (this.posX < 30 || this.posX > 100) this.direction *= -1;
+                    result.offsetY = Math.abs(Math.sin(t * 0.2)) * -6;
+                    this.legPhase += 0.2;
+                } else if (b === 'spin') {
+                    // Spin around - used by labubu and axolotl
+                    result.rotation = t * 0.1;
+                    result.offsetY = Math.sin(t * 0.15) * -5;
+                    result.eyeState = 'happy';
+                } else if (b === 'nibble') {
+                    // Bunny nibbling
+                    result.offsetY = Math.abs(Math.sin(t * 0.2)) * 4;
+                    result.rotation = Math.sin(t * 0.15) * 0.08;
+                    result.eyeState = 'happy';
+                } else if (b === 'nibble_seed') {
+                    // Hamster nibbling seed
+                    result.offsetY = Math.abs(Math.sin(t * 0.25)) * 3;
+                    result.squish = 1 + Math.abs(Math.sin(t * 0.25)) * 0.05;
+                    result.eyeState = 'happy';
+                } else if (b === 'clean') {
+                    // Hamster cleaning
+                    result.rotation = Math.sin(t * 0.15) * 0.1;
+                    result.offsetY = Math.abs(Math.sin(t * 0.15)) * -2;
+                } else if (b === 'fish') {
+                    // Bear fishing
+                    result.offsetY = Math.sin(t * 0.08) * -5;
+                    result.rotation = Math.sin(t * 0.1) * 0.1;
+                    if (t % 80 === 40) this.particles.push({ type: '🐟', x: this.posX + 15, y: 75, life: 30, vx: -1 });
+                } else if (b === 'sniff_air') {
+                    // Bear sniffing air
+                    result.offsetY = -8 + Math.sin(t * 0.1) * -4;
+                    result.squish = 0.9;
+                } else if (b === 'sit_cute') {
+                    // Panda sitting cute
+                    result.offsetY = 8;
+                    result.squish = 1.15;
+                    result.eyeState = 'happy';
+                } else if (b === 'sneeze') {
+                    // Panda sneezing
+                    if (t % 60 < 15) {
+                        result.offsetY = -8;
+                        result.squish = 0.85;
+                    } else {
+                        result.offsetY = 5;
+                        result.squish = 1.1;
+                    }
+                } else if (b === 'tongue_out') {
+                    // Frog tongue out
+                    result.offsetY = Math.sin(t * 0.1) * -3;
+                    if (t % 50 === 0) this.particles.push({ type: '👅', x: this.posX + this.direction * 15, y: 55, life: 15, vx: this.direction * 2 });
+                } else if (b === 'scratch') {
+                    // Chick scratching
+                    result.offsetY = Math.abs(Math.sin(t * 0.2)) * 3;
+                    this.posX += (Math.random() - 0.5) * 0.5;
+                    this.posX = Math.max(40, Math.min(90, this.posX));
                 } else {
                     result.offsetY = Math.sin(t * 0.05) * 2;
                     result.squish = 1 + Math.sin(t * 0.05) * 0.02;
@@ -4382,10 +4481,40 @@
                 }
                 
                 // Animation state overrides
+                // List of behaviors that need free movement (don't reset position)
+                const movementBehaviors = ['chase_tail', 'run_circles', 'hop', 'fetch', 'sniff', 'dig', 'swim', 'waddle', 'drift', 'run', 'walk', 'sneak', 'pounce', 'binky', 'roll_over', 'dance', 'hop_high', 'lumber', 'socialize', 'swim_float', 'float_sad', 'scratch', 'spin'];
+                const needsMovement = movementBehaviors.includes(this.currentBehavior);
+                
                 switch(this.animation) {
                     case 'idle':
                         offsetY += Math.sin(this.frame * 0.06) * 2;
-                        this.posX += (65 - this.posX) * 0.02;
+                        // Only return to center if NO unique behavior is active or it's truly 'idle'
+                        if (this.currentBehavior === 'idle' && !needsMovement) {
+                            this.posX += (65 - this.posX) * 0.02;
+                        }
+                        break;
+                    case 'walking':
+                        // Allow movement from processBehavior, add subtle bobbing
+                        offsetY += Math.abs(Math.sin(this.frame * 0.12)) * 3;
+                        this.legPhase += 0.15;
+                        break;
+                    case 'running':
+                        // More pronounced bobbing, faster leg movement
+                        offsetY += Math.abs(Math.sin(this.frame * 0.2)) * 5;
+                        this.legPhase += 0.25;
+                        this.jumpY = Math.max(this.jumpY, Math.abs(Math.sin(this.frame * 0.15)) * 8);
+                        break;
+                    case 'playing':
+                        // Playful bouncing
+                        offsetY += Math.abs(Math.sin(this.frame * 0.15)) * 4;
+                        if (this.frame % 60 < 15) this.jumpY = 10;
+                        eyeState = 'happy';
+                        break;
+                    case 'happy':
+                        // Happy wiggle
+                        offsetY += Math.sin(this.frame * 0.08) * 3;
+                        rotation += Math.sin(this.frame * 0.1) * 0.05;
+                        eyeState = 'happy';
                         break;
                     case 'eating':
                         offsetY += Math.abs(Math.sin(this.frame * 0.3)) * -8;
@@ -6056,30 +6185,36 @@
                 }
                 if (Date.now() - lastAction < 3000) return;  // Wait 3 sec after action
                 
-                // Random behavior based on stats
+                // Let unique behaviors run - they handle their own movement!
+                // Just set the general animation state based on pet stats
                 const rand = Math.random();
                 const energy = petState.energy || 50;
                 const happiness = petState.happiness || 50;
                 
                 if (energy < 20) {
-                    // Tired - mostly idle with occasional yawn
+                    // Tired - idle animation, but unique behaviors still run
                     petAnimator.setAnimation('idle');
                 } else if (happiness > 80) {
-                    // Very happy - playing or running!
+                    // Very happy - set playing/running animation, unique behaviors do the rest
                     if (rand < 0.4) petAnimator.setAnimation('playing');
                     else if (rand < 0.7) petAnimator.setAnimation('running');
                     else petAnimator.setAnimation('happy');
                 } else if (happiness > 50) {
-                    // Content - walking around or idle
+                    // Content - walking around
                     if (rand < 0.35) petAnimator.setAnimation('walking');
                     else if (rand < 0.5) petAnimator.setAnimation('happy');
                     else petAnimator.setAnimation('idle');
                 } else {
-                    // Low happiness - mostly idle, occasional walk
+                    // Low happiness - mostly idle
                     if (rand < 0.2) petAnimator.setAnimation('walking');
                     else petAnimator.setAnimation('idle');
                 }
-            }, 4000);  // Change every 4 seconds
+                
+                // Trigger a new unique behavior to keep things interesting
+                if (rand < 0.3 && petAnimator.pickNewBehavior) {
+                    petAnimator.pickNewBehavior();
+                }
+            }, 5000);  // Change every 5 seconds (was 4, giving more time for behaviors)
         }
         
         function stopAutoAnimations() {
@@ -6106,7 +6241,9 @@
         function animatePet() {
             // Draw scene background
             if (sceneRenderer) {
-                sceneRenderer.draw(currentScene);
+                // If light is off (sleeping in dark), draw night scene
+                const sceneToRender = (petState && petState.light_off) ? 'night' : currentScene;
+                sceneRenderer.draw(sceneToRender);
             }
             petAnimator.draw();
             requestAnimationFrame(animatePet);
@@ -6331,17 +6468,43 @@
                 });
             }
             
-            // Light mode
-            if (petState.light_off) {
-                console.log('Setting dark mode ON');
-                if (arena) arena.classList.add('dark');
+            // Light mode - with explicit overlay
+            const darkOverlay = document.getElementById('darkOverlay');
+            const sceneCanvas = document.getElementById('sceneCanvas');
+            const isLightOff = petState.light_off === true;
+            console.log('updateSleepLightUI - light_off:', petState.light_off, 'isLightOff:', isLightOff);
+            
+            if (isLightOff) {
+                console.log('🌙 DARK MODE ON');
+                if (arena) {
+                    arena.classList.add('dark');
+                    arena.style.backgroundColor = 'rgba(10, 10, 40, 0.9)';  // Прямой фон!
+                }
+                if (darkOverlay) {
+                    darkOverlay.style.display = 'block';
+                    console.log('darkOverlay shown');
+                }
+                // Затемняем canvas напрямую
+                if (sceneCanvas) {
+                    sceneCanvas.style.filter = 'brightness(0.3)';
+                }
                 lightBtn.classList.add('off');
-                lightBtn.querySelector('span:last-child').textContent = t.light_on_btn || 'LIGHT ON';
+                lightBtn.querySelector('span:last-child').textContent = t.light_on_btn || '💡 ON';
             } else {
-                console.log('Setting dark mode OFF');
-                if (arena) arena.classList.remove('dark');
+                console.log('☀️ LIGHT MODE ON');
+                if (arena) {
+                    arena.classList.remove('dark');
+                    arena.style.backgroundColor = '';  // Убираем прямой фон
+                }
+                if (darkOverlay) {
+                    darkOverlay.style.display = 'none';
+                }
+                // Убираем затемнение
+                if (sceneCanvas) {
+                    sceneCanvas.style.filter = 'none';
+                }
                 lightBtn.classList.remove('off');
-                lightBtn.querySelector('span:last-child').textContent = t.light_off_btn || 'LIGHT OFF';
+                lightBtn.querySelector('span:last-child').textContent = t.light_off_btn || '🌙 OFF';
             }
             
             // Show sleeping indicator
@@ -6383,13 +6546,24 @@
         
         async function toggleLight() {
             const action = petState.light_off ? 'light_on' : 'light_off';
+            console.log('💡 toggleLight called, current light_off:', petState.light_off, 'action:', action);
             await performAction(action);
         }
         
         // Sleep energy recovery system
-        // 1% energy every 2 seconds = 30% per minute = ~3.5 minutes for full recovery
+        // Backend handles real recovery, we just poll more frequently during sleep
+        let sleepPollInterval = null;
+        
         function startSleepEnergyRecovery() {
             if (sleepEnergyTimer) return; // Already running
+            
+            // Start frequent polling for state updates during sleep
+            if (sleepPollInterval) clearInterval(sleepPollInterval);
+            sleepPollInterval = setInterval(() => {
+                if (petState.is_sleeping) {
+                    loadState();  // Fetch updated energy from backend
+                }
+            }, 3000);  // Poll every 3 seconds during sleep
             
             function tick() {
                 if (!petState.is_sleeping) {
@@ -6397,34 +6571,37 @@
                     return;
                 }
                 
-                // НЕ меняем энергию локально - это делает backend!
-                // Только показываем визуальные эффекты
+                // Show visual sleep effects
                 if (petState.energy < 100) {
                     // Show recovery particle occasionally
-                    if (Math.random() < 0.3) {
+                    if (Math.random() < 0.4) {
                         showSleepParticle();
                     }
                 }
                 
                 // Показываем частицы чаще если свет выключен
-                const interval = petState.light_off ? 3000 : 5000;
+                const interval = petState.light_off ? 2000 : 4000;
                 sleepEnergyTimer = setTimeout(tick, interval);
             }
             
             // Start with dynamic interval
-            const initialInterval = petState.light_off ? 3000 : 5000;
+            const initialInterval = petState.light_off ? 2000 : 4000;
             sleepEnergyTimer = setTimeout(tick, initialInterval);
             
-            const mode = petState.light_off ? '🌙 темно (быстро)' : '💡 светло (медленно)';
-            console.log(`💤 Sleep visual effects started - ${mode}`);
+            const mode = petState.light_off ? '🌙 темно (быстрее)' : '💡 светло (медленнее)';
+            console.log(`💤 Sleep energy recovery started - ${mode}`);
         }
         
         function stopSleepEnergyRecovery() {
             if (sleepEnergyTimer) {
                 clearTimeout(sleepEnergyTimer);
                 sleepEnergyTimer = null;
-                console.log('☀️ Sleep energy recovery stopped');
             }
+            if (sleepPollInterval) {
+                clearInterval(sleepPollInterval);
+                sleepPollInterval = null;
+            }
+            console.log('☀️ Sleep energy recovery stopped');
         }
         
         function showSleepParticle() {
@@ -7047,9 +7224,16 @@
                     const data = await response.json();
                     console.log('=== ACTION RESPONSE ===');
                     console.log('Action:', action);
-                    console.log('Before - energy:', petState.energy, 'hygiene:', petState.hygiene);
-                    console.log('After - energy:', data.pet.energy, 'hygiene:', data.pet.hygiene);
+                    console.log('Response light_off:', data.pet.light_off);
+                    console.log('Before petState.light_off:', petState.light_off);
                     updatePetState(data.pet);
+                    console.log('After petState.light_off:', petState.light_off);
+                    
+                    // Если это было действие со светом - принудительно обновить UI
+                    if (action === 'light_on' || action === 'light_off') {
+                        console.log('💡 Light action - forcing UI update');
+                        updateSleepLightUI();
+                    }
                     
                     // Show XP gain
                     if (data.rewards?.xp_gained) {
@@ -7967,6 +8151,21 @@
             }
             
             document.getElementById('loading')?.classList.add('hidden');
+            
+            // Принудительная привязка кнопки света
+            const lightBtnEl = document.getElementById('lightBtn');
+            if (lightBtnEl) {
+                console.log('✅ Light button found, binding click event');
+                lightBtnEl.addEventListener('click', async function(e) {
+                    e.preventDefault();
+                    console.log('💡 LIGHT BUTTON CLICKED!');
+                    const action = petState.light_off ? 'light_on' : 'light_off';
+                    console.log('Current light_off:', petState.light_off, 'Action:', action);
+                    await performAction(action);
+                });
+            } else {
+                console.error('❌ Light button NOT found!');
+            }
             
             if (!localStorage.getItem('tamagochi_onboarding_done')) {
                 showOnboarding();

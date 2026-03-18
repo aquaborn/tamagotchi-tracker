@@ -327,13 +327,14 @@ async def perform_action(
     
     # Apply action
     if action == "feed":
-        # Если уже сыт, даём бонус к энергии
+        # Кормление - питомец пачкается едой!
         energy_bonus = 5 if state.hunger >= 80 else 0
         state = new_state(
             hunger=clamp(state.hunger + 20),
             energy=clamp(state.energy + energy_bonus),
             happiness=clamp(state.happiness + 5),
-            is_sleeping=False  # Просыпается если спал
+            hygiene=clamp(state.hygiene - 10),  # Испачкался едой!
+            is_sleeping=False
         )
     elif action == "play":
         if state.is_sleeping:
@@ -342,7 +343,8 @@ async def perform_action(
             hunger=clamp(state.hunger - 10),
             energy=clamp(state.energy - 15),
             happiness=clamp(state.happiness + 15),
-            discipline=clamp(state.discipline + 2)  # Игра немного повышает дисциплину
+            hygiene=clamp(state.hygiene - 15),  # Испачкался в игре!
+            discipline=clamp(state.discipline + 2)
         )
     elif action == "sleep":
         # 😴 Засыпание - энергия НЕ прибавляется сразу, только во время сна
