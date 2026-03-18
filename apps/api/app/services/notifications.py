@@ -20,11 +20,14 @@ def set_bot_token(token: str):
     BOT_TOKEN = token
     logger.info("Notification service initialized with bot token")
 
-async def send_telegram_message(chat_id: int, text: str) -> bool:
-    """Отправить сообщение через Telegram Bot API"""
+async def send_telegram_message(chat_id: int, text: str) -> tuple[bool, bool]:
+    """
+    Отправить сообщение через Telegram Bot API
+    Returns: (success: bool, user_blocked: bool) - user_blocked=True если юзер заблокировал бота
+    """
     if not BOT_TOKEN:
         logger.warning("Bot token not set, cannot send notification")
-        return False
+        return False, False
     
     try:
         async with httpx.AsyncClient() as client:
@@ -39,13 +42,21 @@ async def send_telegram_message(chat_id: int, text: str) -> bool:
             )
             if response.status_code == 200:
                 logger.info(f"Notification sent to {chat_id}")
-                return True
+                return True, False
             else:
+                error_data = response.json() if response.text else {}
+                error_code = error_data.get("error_code")
+                
+                # 403 Forbidden - пользователь заблокировал бота
+                if error_code == 403:
+                    logger.warning(f"User {chat_id} blocked the bot, disabling notifications")
+                    return False, True
+                
                 logger.error(f"Failed to send notification: {response.text}")
-                return False
+                return False, False
     except Exception as e:
         logger.error(f"Error sending notification: {e}")
-        return False
+        return False, False
 
 # === КРИТИЧЕСКИЕ УВЕДОМЛЕНИЯ ===
 NOTIFICATION_TYPES = {
@@ -169,13 +180,18 @@ def mark_notification_sent(user_id: int, notification_type: str):
 async def check_and_notify_user(
     telegram_id: int,
     pet_state: dict,
-    notifications_enabled: bool = True
-) -> List[str]:
-    """Проверить состояние питомца и отправить уведомления если нужно"""
+    notifications_enabled: bool = True,
+    db: AsyncSession = None
+) -> tuple[List[str], bool]:
+    """
+    Проверить состояние питомца и отправить уведомления если нужно
+    Returns: (sent_notifications, user_blocked)
+    """
     if not notifications_enabled:
-        return []
+        return [], False
     
     sent_notifications = []
+    user_blocked = False
     
     for ntype, config in NOTIFICATION_TYPES.items():
         # Проверяем условие
@@ -191,12 +207,16 @@ async def check_and_notify_user(
         message += "\n\n🎮 <i>Открой приложение и позаботься о питомце!</i>"
         
         # Отправляем
-        if await send_telegram_message(telegram_id, message):
+        success, blocked = await send_telegram_message(telegram_id, message)
+        if blocked:
+            user_blocked = True
+            break  # Пользователь заблокировал бота, прерываем
+        if success:
             mark_notification_sent(telegram_id, ntype)
             sent_notifications.append(ntype)
             logger.info(f"Sent {ntype} notification to {telegram_id}")
     
-    return sent_notifications
+    return sent_notifications, user_blocked
 
 async def send_roulette_result_notification(
     telegram_id: int,
@@ -263,14 +283,15 @@ def mark_engagement_sent(user_id: int):
     """Отметить отправку завлекающего уведомления"""
     _engagement_cooldowns[user_id] = datetime.now(timezone.utc)
 
-async def send_engagement_notification(telegram_id: int, last_activity: datetime = None) -> bool:
+async def send_engagement_notification(telegram_id: int, last_activity: datetime = None) -> tuple[bool, bool]:
     """
     Отправить завлекающее уведомление
     Выбирает сообщение в зависимости от времени суток и рандома
+    Returns: (success, user_blocked)
     """
     # Проверяем cooldown (не чаще раза в 6 часов)
     if not can_send_engagement(telegram_id, cooldown_hours=6):
-        return False
+        return False, False
     
     # Выбираем тип сообщения
     period = get_time_period()
@@ -284,20 +305,27 @@ async def send_engagement_notification(telegram_id: int, last_activity: datetime
     # Добавляем CTA
     message += "\n\n🎮 <i>Нажми чтобы открыть игру!</i>"
     
-    if await send_telegram_message(telegram_id, message):
+    success, blocked = await send_telegram_message(telegram_id, message)
+    if blocked:
+        return False, True
+    
+    if success:
         mark_engagement_sent(telegram_id)
         logger.info(f"Sent engagement notification to {telegram_id}")
-        return True
+        return True, False
     
-    return False
+    return False, False
 
-async def send_inactivity_reminder(telegram_id: int, hours_inactive: int) -> bool:
-    """Напоминание для неактивных пользователей"""
+async def send_inactivity_reminder(telegram_id: int, hours_inactive: int) -> tuple[bool, bool]:
+    """
+    Напоминание для неактивных пользователей
+    Returns: (success, user_blocked)
+    """
     if hours_inactive < 12:
-        return False
+        return False, False
     
     if not can_send_engagement(telegram_id, cooldown_hours=12):
-        return False
+        return False, False
     
     if hours_inactive < 24:
         message = "🐾 <b>Твой питомец скучает!</b>\n\nТы не заходил уже давно... Он ждёт тебя! 🥺"
@@ -310,12 +338,16 @@ async def send_inactivity_reminder(telegram_id: int, hours_inactive: int) -> boo
     
     message += "\n\n🎮 <i>Открой игру и позаботься о питомце!</i>"
     
-    if await send_telegram_message(telegram_id, message):
+    success, blocked = await send_telegram_message(telegram_id, message)
+    if blocked:
+        return False, True
+    
+    if success:
         mark_engagement_sent(telegram_id)
         logger.info(f"Sent inactivity reminder to {telegram_id} (inactive {hours_inactive}h)")
-        return True
+        return True, False
     
-    return False
+    return False, False
 
 
 # === BACKGROUND TASK для рассылки уведомлений ===
@@ -356,10 +388,14 @@ async def engagement_notification_worker(db_session_factory):
                 users_pets = result.all()
                 
                 sent_count = 0
+                blocked_users = []  # Список пользователей, заблокировавших бота
+                
                 for user, pet in users_pets:
                     # Не спамим - максимум 50 уведомлений за итерацию
                     if sent_count >= 50:
                         break
+                    
+                    user_blocked = False
                     
                     # Проверяем неактивность
                     if pet.last_tick_at:
@@ -367,40 +403,61 @@ async def engagement_notification_worker(db_session_factory):
                         
                         # Если неактивен более 12 часов - отправляем напоминание
                         if hours_inactive >= 12:
-                            if await send_inactivity_reminder(user.telegram_id, int(hours_inactive)):
+                            success, blocked = await send_inactivity_reminder(user.telegram_id, int(hours_inactive))
+                            if blocked:
+                                user_blocked = True
+                            elif success:
                                 sent_count += 1
+                            
+                            if user_blocked:
+                                blocked_users.append(user)
                             continue
                     
-                    # Проверяем низкие показатели
-                    pet_state = {
-                        "hunger": pet.hunger,
-                        "energy": pet.energy,
-                        "happiness": pet.happiness,
-                        "hygiene": pet.hygiene,
-                        "health": pet.health,
-                        "is_sick": pet.is_sick
-                    }
-                    
-                    # Если есть критические состояния - проверяем и отправляем
-                    any_critical = (
-                        pet.hunger < 30 or 
-                        pet.energy < 20 or 
-                        pet.happiness < 30 or 
-                        pet.hygiene < 25 or
-                        pet.health < 40 or
-                        pet.is_sick
-                    )
-                    
-                    if any_critical:
-                        sent = await check_and_notify_user(user.telegram_id, pet_state, True)
-                        if sent:
-                            sent_count += len(sent)
-                            continue
+                    if not user_blocked:
+                        # Проверяем низкие показатели
+                        pet_state = {
+                            "hunger": pet.hunger,
+                            "energy": pet.energy,
+                            "happiness": pet.happiness,
+                            "hygiene": pet.hygiene,
+                            "health": pet.health,
+                            "is_sick": pet.is_sick
+                        }
+                        
+                        # Если есть критические состояния - проверяем и отправляем
+                        any_critical = (
+                            pet.hunger < 30 or 
+                            pet.energy < 20 or 
+                            pet.happiness < 30 or 
+                            pet.hygiene < 25 or
+                            pet.health < 40 or
+                            pet.is_sick
+                        )
+                        
+                        if any_critical:
+                            sent, blocked = await check_and_notify_user(user.telegram_id, pet_state, True)
+                            if blocked:
+                                user_blocked = True
+                                blocked_users.append(user)
+                            elif sent:
+                                sent_count += len(sent)
+                                continue
                     
                     # Иначе - шанс отправить завлекающее уведомление (10%)
-                    if random.random() < 0.1:
-                        if await send_engagement_notification(user.telegram_id):
+                    if not user_blocked and random.random() < 0.1:
+                        success, blocked = await send_engagement_notification(user.telegram_id)
+                        if blocked:
+                            blocked_users.append(user)
+                        elif success:
                             sent_count += 1
+                
+                # Отключаем уведомления для пользователей, заблокировавших бота
+                if blocked_users:
+                    for user in blocked_users:
+                        user.notifications_enabled = False
+                        logger.info(f"Disabled notifications for user {user.telegram_id} (blocked bot)")
+                    await db.commit()
+                    logger.info(f"Disabled notifications for {len(blocked_users)} users who blocked the bot")
                 
                 logger.info(f"Engagement worker: sent {sent_count} notifications")
                 
