@@ -2,14 +2,74 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import random
 
+# =============================================================================
+# НОВАЯ СИСТЕМА СТАТОВ - "Цикл жизни питомца"
+# Пользователь заходит 3 раза в день: Утро (покормить), День (поиграть), Вечер (помыть/уложить)
+# =============================================================================
+
+# Конфигурация скоростей деградации (в секундах)
+DECAY_CONFIG = {
+    # Голод - "Таймер выживания"
+    "hunger_interval": 1200,        # -1 каждые 20 мин базово
+    "hunger_awake_multiplier": 1.5, # x1.5 если не спит
+    "hunger_critical": 20,          # Ниже этого - штрафы
+    "hunger_starving": 5,           # Ниже этого - теряем здоровье
+    
+    # Энергия - "Ресурс для действий"
+    "energy_interval": 2400,        # -1 каждые 40 мин пассивно
+    "energy_sleep_recovery": 12,    # +1 каждые 12 сек во сне (+5/мин)
+    "energy_sleep_light_on": 30,    # +1 каждые 30 сек если свет (медленнее)
+    "energy_awake_recovery": 300,   # +1 каждые 5 мин бодрствуя (очень медленно)
+    "energy_min_for_play": 10,      # Минимум для игр
+    
+    # Гигиена - "Событийный стат" (почти не падает сама)
+    "hygiene_interval": 7200,       # -1 каждые 2 часа пассивно
+    "hygiene_critical": 30,         # Ниже этого - риск болезни x2, счастье x2
+    "hygiene_dirty": 20,            # Ниже этого - "Грязнуля"
+    
+    # Счастье - "Множитель прогресса"
+    "happiness_hunger_threshold": 40,   # Голод ниже -> счастье падает
+    "happiness_hygiene_threshold": 30,  # Гигиена ниже -> счастье падает  
+    "happiness_energy_threshold": 20,   # Энергия ниже -> счастье падает
+    "happiness_decay_interval": 600,    # -1 каждые 10 мин при плохих статах
+    "happiness_bonus_threshold": 80,    # Выше этого - бонус к оффлайн доходу
+    "happiness_runaway_threshold": 30,  # Ниже этого - риск побега/болезни
+    
+    # Здоровье - "Защитный слой" (падает только при критических условиях)
+    "health_starvation_interval": 1800, # -5 каждые 30 мин если голод < 5
+    "health_starvation_damage": 5,
+    "health_sickness_interval": 600,    # -2 каждые 10 мин если болен
+    "health_sickness_damage": 2,
+    
+    # Болезнь
+    "sickness_base_chance": 0.03,       # 3% базовый шанс заболеть за тик
+    "sickness_dirty_multiplier": 2.0,   # x2 если грязный
+}
+
+# Стоимость действий (для apply_action)
+ACTION_COSTS = {
+    "play_ball": {"energy": -15, "hygiene": -15, "happiness": +20},
+    "play_toy": {"energy": -10, "hygiene": -10, "happiness": +15},
+    "train": {"energy": -20, "hygiene": -5, "happiness": +5, "discipline": +10},
+    "walk": {"energy": -10, "hygiene": -20, "happiness": +25},
+    "feed": {"hunger": +30, "hygiene": -10, "happiness": +5},
+    "feed_treat": {"hunger": +15, "hygiene": -5, "happiness": +15},
+    "clean": {"hygiene": +40, "happiness": +5},
+    "bath": {"hygiene": +100, "happiness": +10, "energy": -5},
+    "pet": {"happiness": +10},
+    "medicine": {"health": +30, "happiness": -10},  # Лекарство невкусное
+    "sleep": {},  # Обрабатывается отдельно через is_sleeping
+    "wake": {},
+}
+
 @dataclass
 class PetState:
     hunger: int       # 0..100 (100 = сытый)
     energy: int       # 0..100
     happiness: int    # 0..100
-    hygiene: int = 100      # 0..100 (чистота) - NEW!
-    health: int = 100       # 0..100 (здоровье) - NEW!
-    discipline: int = 50    # 0..100 (дисциплина) - NEW!
+    hygiene: int = 100      # 0..100 (чистота)
+    health: int = 100       # 0..100 (здоровье)
+    discipline: int = 50    # 0..100 (дисциплина)
     is_sick: bool = False   # болеет ли питомец
     is_sleeping: bool = False  # спит ли питомец
     light_off: bool = False    # выключен ли свет
@@ -20,96 +80,137 @@ def clamp(v: int) -> int:
     return max(0, min(100, v))
 
 def apply_tick(state: PetState, now: datetime, weather_multipliers: dict = None) -> PetState:
-    """Apply time-based stat changes with optional weather modifiers"""
+    """
+    Новая система деградации статов:
+    - Голод падает быстрее если бодрствует
+    - Энергия почти не падает пассивно, но быстро восстанавливается во сне
+    - Гигиена падает очень медленно (основное падение от действий)
+    - Счастье падает если другие статы низкие
+    - Здоровье падает только при голодании или болезни
+    """
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
     dt = (now - state.last_tick_at).total_seconds()
     if dt <= 0:
         return state
     
-    weather_multipliers = weather_multipliers or {}
+    cfg = DECAY_CONFIG
+    weather = weather_multipliers or {}
     
-    # Базовая деградация каждые N секунд
-    base_hunger_loss = int(dt // 600)   # -1 каждые 10 мин
-    base_energy_loss = int(dt // 900)   # -1 каждые 15 мин
-    base_hygiene_loss = int(dt // 800)  # -1 каждые ~13 мин (быстрее чем голод)
+    # ==================== ГОЛОД ====================
+    # Базово: -1 каждые 20 мин
+    # Если бодрствует: x1.5 быстрее
+    hunger_interval = cfg["hunger_interval"]
+    if not state.is_sleeping:
+        hunger_interval = hunger_interval / cfg["hunger_awake_multiplier"]
     
-    # Применяем модификаторы погоды
-    hunger_drain = weather_multipliers.get("hunger_drain", 1.0)
-    energy_drain = weather_multipliers.get("energy_drain", 1.0)
-    happiness_drain = weather_multipliers.get("happiness_drain", 1.0)
+    # Погодный модификатор (снег/шторм = больше еды)
+    hunger_interval = hunger_interval / weather.get("hunger_drain", 1.0)
     
-    hunger_loss = int(base_hunger_loss * hunger_drain)
-    energy_loss = int(base_energy_loss * energy_drain)
-    hygiene_loss = base_hygiene_loss
-    
-    # Если спит - энергия восстанавливается (УСКОРЕННО!)
-    if state.is_sleeping and state.light_off:
-        energy_loss = -int(dt // 60)   # +1 каждую минуту (быстро)
-    elif state.is_sleeping:
-        energy_loss = -int(dt // 120)  # +1 каждые 2 мин (медленнее со светом)
-    
+    hunger_loss = int(dt // hunger_interval) if hunger_interval > 0 else 0
     new_hunger = clamp(state.hunger - hunger_loss)
-    new_energy = clamp(state.energy - energy_loss)
+    
+    # ==================== ЭНЕРГИЯ ====================
+    if state.is_sleeping:
+        # Сон: быстрое восстановление
+        if state.light_off:
+            # +1 каждые 12 сек = +5 в минуту
+            energy_gain = int(dt // cfg["energy_sleep_recovery"])
+        else:
+            # Свет мешает: +1 каждые 30 сек = +2 в минуту
+            energy_gain = int(dt // cfg["energy_sleep_light_on"])
+        new_energy = clamp(state.energy + energy_gain)
+    else:
+        # Бодрствование: медленная потеря, очень медленное восстановление если отдыхает
+        energy_interval = cfg["energy_interval"] / weather.get("energy_drain", 1.0)
+        energy_loss = int(dt // energy_interval) if energy_interval > 0 else 0
+        new_energy = clamp(state.energy - energy_loss)
+    
+    # ==================== ГИГИЕНА ====================
+    # Очень медленное пассивное падение (-1 каждые 2 часа)
+    # Основное падение - от действий (кормление, игры)
+    hygiene_loss = int(dt // cfg["hygiene_interval"])
     new_hygiene = clamp(state.hygiene - hygiene_loss)
     
-    # happiness падает только при ОЧЕНЬ низких статах
-    happiness_penalty = 0
-    if new_hunger < 15:
-        happiness_penalty += 1
-    if new_hygiene < 20:
-        happiness_penalty += 1
-    # Применяем модификатор погоды к happiness
-    happiness_penalty = int(happiness_penalty * happiness_drain)
-    new_happiness = clamp(state.happiness - happiness_penalty)
+    # ==================== СЧАСТЬЕ ====================
+    # Падает если другие статы плохие
+    happiness_decay_rate = 0
+    happiness_multiplier = weather.get("happiness_drain", 1.0)
     
+    # Голодный питомец грустит
+    if new_hunger < cfg["happiness_hunger_threshold"]:
+        happiness_decay_rate += 1
+        if new_hunger < 20:  # Очень голодный - ещё быстрее
+            happiness_decay_rate += 1
+    
+    # Грязный питомец грустит (x2 скорость если критично)
+    if new_hygiene < cfg["happiness_hygiene_threshold"]:
+        happiness_decay_rate += 1
+        if new_hygiene < cfg["hygiene_dirty"]:
+            happiness_decay_rate += 1  # "Грязнуля" - двойной штраф
+    
+    # Уставший питомец грустит
+    if new_energy < cfg["happiness_energy_threshold"]:
+        happiness_decay_rate += 1
+    
+    # Применяем погодный модификатор
+    happiness_decay_rate = int(happiness_decay_rate * happiness_multiplier)
+    
+    # Рассчитываем потерю счастья
+    happiness_loss = 0
+    if happiness_decay_rate > 0:
+        # -1 каждые 10 мин за каждый фактор
+        ticks = int(dt // cfg["happiness_decay_interval"])
+        happiness_loss = ticks * happiness_decay_rate
+    
+    new_happiness = clamp(state.happiness - happiness_loss)
+    
+    # ==================== ЗДОРОВЬЕ ====================
     new_health = state.health
     new_is_sick = state.is_sick
     
-    # === ЗДОРОВЬЕ: падает от критических показателей ===
-    health_loss = 0
+    # Здоровье падает ТОЛЬКО при критических условиях:
     
-    # Низкий голод (< 20) - здоровье падает
-    if new_hunger < 20:
-        health_loss += int(dt // 600)  # -1 каждые 10 мин
+    # 1. Голодание (hunger < 5) - прямой урон здоровью
+    if new_hunger < cfg["hunger_starving"]:
+        starvation_damage = int(dt // cfg["health_starvation_interval"]) * cfg["health_starvation_damage"]
+        new_health = clamp(new_health - starvation_damage)
     
-    # Низкая энергия (< 15) - здоровье падает
-    if new_energy < 15:
-        health_loss += int(dt // 900)  # -1 каждые 15 мин
-    
-    # Низкая гигиена (< 20) - здоровье падает
-    if new_hygiene < 20:
-        health_loss += int(dt // 1200)  # -1 каждые 20 мин
-    
-    # Применяем потерю здоровья
-    new_health = clamp(state.health - health_loss)
-    
-    # Шанс заболеть если критические показатели (5% шанс за тик)
-    if not state.is_sick:
-        critical_count = sum([
-            new_hunger < 15,
-            new_energy < 10,
-            new_hygiene < 15,
-            new_health < 50
-        ])
-        if critical_count >= 2:  # Если 2+ критических показателя
-            if random.random() < 0.05:
-                new_is_sick = True
-                new_health = clamp(new_health - 15)
-    
-    # Если болеет - здоровье падает быстрее
+    # 2. Болезнь - постоянный урон
     if new_is_sick:
-        sickness_health_loss = int(dt // 300)  # -1 каждые 5 мин
-        new_health = clamp(new_health - sickness_health_loss)
-        new_happiness = clamp(new_happiness - 3)
+        sickness_damage = int(dt // cfg["health_sickness_interval"]) * cfg["health_sickness_damage"]
+        new_health = clamp(new_health - sickness_damage)
+        # Больной питомец ещё и грустный
+        new_happiness = clamp(new_happiness - int(dt // 600))  # -1 каждые 10 мин
     
-    # Нужно внимание если критичные показатели
+    # ==================== БОЛЕЗНЬ ====================
+    # Шанс заболеть если грязный или с низким здоровьем
+    if not new_is_sick:
+        sickness_chance = cfg["sickness_base_chance"]
+        
+        # Грязный питомец болеет чаще
+        if new_hygiene < cfg["hygiene_critical"]:
+            sickness_chance *= cfg["sickness_dirty_multiplier"]
+        
+        # Низкое здоровье = выше шанс
+        if new_health < 50:
+            sickness_chance *= 1.5
+        
+        # Проверяем шанс за каждые 10 минут прошедшего времени
+        checks = max(1, int(dt // 600))
+        for _ in range(checks):
+            if random.random() < sickness_chance:
+                new_is_sick = True
+                new_health = clamp(new_health - 10)  # Сразу -10 здоровья при заболевании
+                break
+    
+    # ==================== NEEDS ATTENTION ====================
     needs_attention = (
-        new_hunger < 20 or 
-        new_energy < 20 or 
-        new_hygiene < 30 or 
-        new_is_sick or
-        new_happiness < 30
+        new_hunger < cfg["hunger_critical"] or 
+        new_energy < cfg["energy_min_for_play"] or 
+        new_hygiene < cfg["hygiene_critical"] or 
+        new_happiness < cfg["happiness_runaway_threshold"] or
+        new_is_sick
     )
     
     return PetState(
@@ -125,3 +226,148 @@ def apply_tick(state: PetState, now: datetime, weather_multipliers: dict = None)
         needs_attention=needs_attention,
         last_tick_at=now,
     )
+
+
+def apply_action(state: PetState, action: str, now: datetime = None) -> tuple[PetState, dict]:
+    """
+    Применить действие к питомцу.
+    Возвращает (новый_стейт, результат).
+    
+    Результат содержит:
+    - success: bool
+    - message: str
+    - stat_changes: dict изменений
+    """
+    if now is None:
+        now = datetime.now(timezone.utc)
+    
+    # Сначала применяем тик времени
+    state = apply_tick(state, now)
+    
+    result = {
+        "success": False,
+        "message": "",
+        "stat_changes": {}
+    }
+    
+    # Проверка: можно ли выполнить действие?
+    
+    # Спящий питомец не может играть
+    if state.is_sleeping and action in ["play_ball", "play_toy", "train", "walk", "feed"]:
+        result["message"] = "Питомец спит! Сначала разбудите его."
+        return state, result
+    
+    # Недостаточно энергии для активных действий
+    energy_actions = ["play_ball", "play_toy", "train", "walk"]
+    if action in energy_actions:
+        cost = abs(ACTION_COSTS.get(action, {}).get("energy", 0))
+        if state.energy < cost:
+            result["message"] = f"Недостаточно энергии! Нужно {cost}, есть {state.energy}. Уложите питомца спать."
+            return state, result
+    
+    # Получаем стоимость действия
+    costs = ACTION_COSTS.get(action, {})
+    if not costs and action not in ["sleep", "wake"]:
+        result["message"] = f"Неизвестное действие: {action}"
+        return state, result
+    
+    # Применяем изменения статов
+    new_hunger = clamp(state.hunger + costs.get("hunger", 0))
+    new_energy = clamp(state.energy + costs.get("energy", 0))
+    new_happiness = clamp(state.happiness + costs.get("happiness", 0))
+    new_hygiene = clamp(state.hygiene + costs.get("hygiene", 0))
+    new_health = clamp(state.health + costs.get("health", 0))
+    new_discipline = clamp(state.discipline + costs.get("discipline", 0))
+    new_is_sleeping = state.is_sleeping
+    new_is_sick = state.is_sick
+    
+    # Специальные действия
+    if action == "sleep":
+        new_is_sleeping = True
+        result["message"] = "Питомец уснул. Энергия будет восстанавливаться."
+    elif action == "wake":
+        new_is_sleeping = False
+        result["message"] = "Питомец проснулся!"
+    elif action == "medicine" and state.is_sick:
+        new_is_sick = False
+        result["message"] = "Питомец выздоровел!"
+    elif action == "medicine" and not state.is_sick:
+        result["message"] = "Питомец не болен, лекарство не нужно."
+        return state, result
+    elif action == "bath":
+        result["message"] = "Питомец теперь чистый и довольный!"
+    elif action == "feed":
+        result["message"] = "Питомец покушал! Но немного испачкался."
+    elif action in ["play_ball", "play_toy"]:
+        result["message"] = "Питомец поиграл и стал счастливее! Но устал и испачкался."
+    elif action == "walk":
+        result["message"] = "Отличная прогулка! Питомец счастлив, но испачкался."
+    elif action == "pet":
+        result["message"] = "Питомцу приятно! 💕"
+    else:
+        result["message"] = f"Действие '{action}' выполнено."
+    
+    result["success"] = True
+    result["stat_changes"] = costs
+    
+    # Пересчитываем needs_attention
+    cfg = DECAY_CONFIG
+    needs_attention = (
+        new_hunger < cfg["hunger_critical"] or 
+        new_energy < cfg["energy_min_for_play"] or 
+        new_hygiene < cfg["hygiene_critical"] or 
+        new_happiness < cfg["happiness_runaway_threshold"] or
+        new_is_sick
+    )
+    
+    new_state = PetState(
+        hunger=new_hunger,
+        energy=new_energy,
+        happiness=new_happiness,
+        hygiene=new_hygiene,
+        health=new_health,
+        discipline=new_discipline,
+        is_sick=new_is_sick,
+        is_sleeping=new_is_sleeping,
+        light_off=state.light_off,
+        needs_attention=needs_attention,
+        last_tick_at=now,
+    )
+    
+    return new_state, result
+
+
+def get_offline_bonus_multiplier(happiness: int) -> float:
+    """
+    Бонус к оффлайн-доходу в зависимости от счастья.
+    happiness > 80: +20% бонус
+    happiness > 60: +10% бонус  
+    happiness < 30: -50% штраф
+    """
+    if happiness >= 80:
+        return 1.2
+    elif happiness >= 60:
+        return 1.1
+    elif happiness < 30:
+        return 0.5
+    return 1.0
+
+
+def can_perform_action(state: PetState, action: str) -> tuple[bool, str]:
+    """
+    Проверить, может ли питомец выполнить действие.
+    Возвращает (можно, причина_если_нет).
+    """
+    if state.is_sleeping and action in ["play_ball", "play_toy", "train", "walk", "feed"]:
+        return False, "Питомец спит"
+    
+    energy_actions = ["play_ball", "play_toy", "train", "walk"]
+    if action in energy_actions:
+        cost = abs(ACTION_COSTS.get(action, {}).get("energy", 0))
+        if state.energy < cost:
+            return False, f"Мало энергии ({state.energy}/{cost})"
+    
+    if action == "medicine" and not state.is_sick:
+        return False, "Питомец здоров"
+    
+    return True, "OK"

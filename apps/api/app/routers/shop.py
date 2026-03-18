@@ -535,53 +535,121 @@ async def use_item(
     if not pet_state:
         raise HTTPException(status_code=404, detail="Питомец не найден")
     
-    # Применяем эффект
+    # Копируем текущие значения
+    new_hunger = pet_state.hunger
+    new_energy = pet_state.energy
+    new_happiness = pet_state.happiness
+    new_hygiene = getattr(pet_state, 'hygiene', 100)
+    new_health = getattr(pet_state, 'health', 100)
+    new_is_sick = getattr(pet_state, 'is_sick', False)
     message = ""
     
-    if item.effect_type == "hunger_restore":
-        new_hunger = clamp(pet_state.hunger + item.effect_value)
-        pet_state = PetState(
-            hunger=new_hunger,
-            energy=pet_state.energy,
-            happiness=pet_state.happiness,
-            last_tick_at=pet_state.last_tick_at
-        )
-        message = f"Сытость восстановлена до {new_hunger}!"
+    effect = item.effect_type
+    value = item.effect_value or 0
+    
+    # === ЕДА И ЭНЕРГИЯ ===
+    if effect == "hunger_restore":
+        new_hunger = clamp(new_hunger + value)
+        message = f"🍖 Сытость: {new_hunger}%"
         
-    elif item.effect_type == "energy_restore":
-        new_energy = clamp(pet_state.energy + item.effect_value)
-        pet_state = PetState(
-            hunger=pet_state.hunger,
-            energy=new_energy,
-            happiness=pet_state.happiness,
-            last_tick_at=pet_state.last_tick_at
-        )
-        message = f"Энергия восстановлена до {new_energy}!"
+    elif effect == "energy_restore":
+        new_energy = clamp(new_energy + value)
+        message = f"⚡ Энергия: {new_energy}%"
         
-    elif item.effect_type == "hunger_happiness_restore":
-        new_hunger = clamp(pet_state.hunger + item.effect_value)
-        new_happiness = clamp(pet_state.happiness + 10)
-        pet_state = PetState(
-            hunger=new_hunger,
-            energy=pet_state.energy,
-            happiness=new_happiness,
-            last_tick_at=pet_state.last_tick_at
-        )
-        message = f"Сытость: {new_hunger}, Счастье: {new_happiness}!"
+    elif effect == "happiness_restore":
+        new_happiness = clamp(new_happiness + value)
+        message = f"😊 Счастье: {new_happiness}%"
         
-    elif item.effect_type == "full_restore":
-        pet_state = PetState(
-            hunger=100,
-            energy=100,
-            happiness=100,
-            last_tick_at=pet_state.last_tick_at
-        )
-        message = "Все статы восстановлены до 100!"
+    elif effect in ["hunger_happiness", "hunger_happiness_restore"]:
+        new_hunger = clamp(new_hunger + value)
+        new_happiness = clamp(new_happiness + 10)
+        message = f"🍖 Сытость: {new_hunger}%, 😊 Счастье: {new_happiness}%"
+        
+    elif effect == "energy_happiness":
+        new_energy = clamp(new_energy + value)
+        new_happiness = clamp(new_happiness + 20)
+        message = f"⚡ Энергия: {new_energy}%, 😊 Счастье: {new_happiness}%"
+        
+    elif effect == "multi_restore":
+        new_hunger = clamp(new_hunger + value)
+        new_happiness = clamp(new_happiness + 15)
+        new_energy = clamp(new_energy + 10)
+        message = f"🌟 Все статы улучшены!"
+        
+    elif effect == "full_restore":
+        new_hunger = 100
+        new_energy = 100
+        new_happiness = 100
+        new_hygiene = 100
+        new_health = 100
+        new_is_sick = False
+        message = "👑 Все статы восстановлены до 100%!"
+        
+    elif effect == "divine_restore":
+        new_hunger = 100
+        new_energy = 100
+        new_happiness = 100
+        new_hygiene = 100
+        new_health = 100
+        new_is_sick = False
+        message = "✨ Божественное восстановление! Все статы MAX!"
+        
+    # === МЕДИЦИНА ===
+    elif effect == "health_restore":
+        new_health = clamp(new_health + value)
+        message = f"❤️ Здоровье: {new_health}%"
+        
+    elif effect == "cure_sickness":
+        if not new_is_sick:
+            raise HTTPException(status_code=400, detail="Питомец не болеет!")
+        new_is_sick = False
+        new_health = clamp(new_health + value)
+        message = f"💊 Питомец вылечен! Здоровье: {new_health}%"
+        
+    elif effect == "full_health":
+        new_health = 100
+        new_is_sick = False
+        message = "❤️‍🔥 Полное здоровье!"
+        
+    # === ГИГИЕНА ===
+    elif effect == "hygiene_restore":
+        new_hygiene = clamp(new_hygiene + value)
+        message = f"🧴 Гигиена: {new_hygiene}%"
+        
+    elif effect == "spa_treatment":
+        new_hygiene = clamp(new_hygiene + value)
+        new_happiness = clamp(new_happiness + 10)
+        message = f"🛁 СПА! Гигиена: {new_hygiene}%, Счастье: {new_happiness}%"
+        
+    elif effect == "premium_grooming":
+        new_hygiene = 100
+        new_happiness = clamp(new_happiness + 30)
+        message = f"🧖 Премиум уход! Гигиена: 100%, Счастье: {new_happiness}%"
+        
+    elif effect == "rainbow_happiness":
+        new_happiness = clamp(new_happiness + value)
+        message = f"🌈 Радужное счастье! {new_happiness}%"
+    
     else:
         raise HTTPException(status_code=400, detail="Этот предмет нельзя использовать")
     
+    # Создаём новый стейт со всеми полями
+    new_pet_state = PetState(
+        hunger=new_hunger,
+        energy=new_energy,
+        happiness=new_happiness,
+        hygiene=new_hygiene,
+        health=new_health,
+        discipline=getattr(pet_state, 'discipline', 50),
+        is_sick=new_is_sick,
+        is_sleeping=getattr(pet_state, 'is_sleeping', False),
+        light_off=getattr(pet_state, 'light_off', False),
+        needs_attention=getattr(pet_state, 'needs_attention', False),
+        last_tick_at=pet_state.last_tick_at
+    )
+    
     # Сохраняем состояние питомца
-    await pet_repo.update(user_id, pet_state)
+    await pet_repo.update(user_id, new_pet_state)
     
     # Уменьшаем количество
     inv.quantity -= 1
@@ -594,9 +662,12 @@ async def use_item(
         "success": True,
         "message": message,
         "pet": {
-            "hunger": pet_state.hunger,
-            "energy": pet_state.energy,
-            "happiness": pet_state.happiness
+            "hunger": new_hunger,
+            "energy": new_energy,
+            "happiness": new_happiness,
+            "hygiene": new_hygiene,
+            "health": new_health,
+            "is_sick": new_is_sick
         },
         "item_remaining": max(0, inv.quantity)
     }
@@ -1075,3 +1146,113 @@ async def get_my_listings(
         })
     
     return {"listings": items, "total": len(items)}
+
+
+# === ЛЕЧЕНИЕ ПИТОМЦА ===
+
+@router.post("/heal")
+async def heal_pet(
+    user_id: int = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    Лечит больного питомца.
+    Сначала проверяет инвентарь на наличие лекарства.
+    Если есть - использует его. Если нет - ошибка.
+    """
+    user = await get_or_create_user(user_id, db)
+    
+    pet_repo = PetRepo(db)
+    pet_state = await pet_repo.get_by_user_id(user_id)
+    
+    if not pet_state:
+        raise HTTPException(status_code=404, detail="Питомец не найден")
+    
+    is_sick = getattr(pet_state, 'is_sick', False)
+    if not is_sick:
+        raise HTTPException(status_code=400, detail="Питомец не болеет!")
+    
+    # Ищем лекарство в инвентаре (effect_type = cure_sickness или full_health)
+    result = await db.execute(
+        select(UserInventory, ShopItem)
+        .join(ShopItem)
+        .where(UserInventory.user_id == user.id)
+        .where(UserInventory.quantity > 0)
+        .where(ShopItem.effect_type.in_(["cure_sickness", "full_health", "full_restore", "divine_restore"]))
+        .order_by(ShopItem.price_stars)  # Сначала дешёвые
+    )
+    row = result.first()
+    
+    if not row:
+        raise HTTPException(
+            status_code=400, 
+            detail="Нет лекарства! Купите 💊 в магазине."
+        )
+    
+    inv, item = row
+    effect = item.effect_type
+    value = item.effect_value or 0
+    
+    # Копируем текущие значения
+    new_hunger = pet_state.hunger
+    new_energy = pet_state.energy
+    new_happiness = pet_state.happiness
+    new_hygiene = getattr(pet_state, 'hygiene', 100)
+    new_health = getattr(pet_state, 'health', 100)
+    new_is_sick = False  # Лечим!
+    
+    if effect == "cure_sickness":
+        new_health = clamp(new_health + value)
+        message = f"💊 Питомец вылечен! Здоровье: {new_health}%"
+    elif effect == "full_health":
+        new_health = 100
+        message = "❤️‍🔥 Полное здоровье!"
+    elif effect in ["full_restore", "divine_restore"]:
+        new_hunger = 100
+        new_energy = 100
+        new_happiness = 100
+        new_hygiene = 100
+        new_health = 100
+        message = "👑 Все статы восстановлены!"
+    else:
+        new_health = clamp(new_health + 20)
+        message = f"💊 Питомец вылечен! Здоровье: {new_health}%"
+    
+    # Создаём новый стейт
+    new_pet_state = PetState(
+        hunger=new_hunger,
+        energy=new_energy,
+        happiness=new_happiness,
+        hygiene=new_hygiene,
+        health=new_health,
+        discipline=getattr(pet_state, 'discipline', 50),
+        is_sick=new_is_sick,
+        is_sleeping=getattr(pet_state, 'is_sleeping', False),
+        light_off=getattr(pet_state, 'light_off', False),
+        needs_attention=getattr(pet_state, 'needs_attention', False),
+        last_tick_at=pet_state.last_tick_at
+    )
+    
+    # Сохраняем
+    await pet_repo.update(user_id, new_pet_state)
+    
+    # Уменьшаем количество лекарства
+    inv.quantity -= 1
+    if inv.quantity <= 0:
+        await db.delete(inv)
+    
+    await db.commit()
+    
+    return {
+        "success": True,
+        "message": message,
+        "item_used": item.name,
+        "pet": {
+            "hunger": new_hunger,
+            "energy": new_energy,
+            "happiness": new_happiness,
+            "hygiene": new_hygiene,
+            "health": new_health,
+            "is_sick": new_is_sick
+        }
+    }

@@ -219,6 +219,35 @@ EXTENDED_SHOP_ITEMS = [
      "effect_duration_hours": 24, "min_level": 20},
     
     # ==========================================
+    # МЕДИЦИНА (medicine) - лечение и гигиена
+    # ==========================================
+    
+    {"name": "Бинт", "description": "🩹+15 health. Basic healing.", "category": "medicine", "price_stars": 5,
+     "effect_type": "health_restore", "effect_value": 15, "emoji": "🩹", "rarity": "common"},
+    
+    {"name": "Аптечка", "description": "🏥+30 health. First aid kit!", "category": "medicine", "price_stars": 12,
+     "effect_type": "health_restore", "effect_value": 30, "emoji": "🏥", "rarity": "common"},
+    
+    {"name": "Лекарство", "description": "💊 Cures sickness + 20 health!", "category": "medicine", "price_stars": 20,
+     "effect_type": "cure_sickness", "effect_value": 20, "emoji": "💊", "rarity": "rare"},
+    
+    {"name": "Супер-таблетка", "description": "🌟 Cures sickness + 50 health!", "category": "medicine", "price_stars": 40,
+     "effect_type": "cure_sickness", "effect_value": 50, "emoji": "💊✨", "rarity": "epic"},
+    
+    {"name": "Эликсир здоровья", "description": "❤️ Full health + immunity 4h!", "category": "medicine", "price_stars": 60,
+     "effect_type": "full_health", "effect_value": 100, "emoji": "❤️‍🔥", "rarity": "epic",
+     "effect_duration_hours": 4},
+    
+    {"name": "Шампунь", "description": "🧴+30 hygiene. Basic wash.", "category": "medicine", "price_stars": 5,
+     "effect_type": "hygiene_restore", "effect_value": 30, "emoji": "🧴", "rarity": "common"},
+    
+    {"name": "СПА набор", "description": "🛁+60 hygiene, +10 happy. Relaxing!", "category": "medicine", "price_stars": 15,
+     "effect_type": "spa_treatment", "effect_value": 60, "emoji": "🛁", "rarity": "rare"},
+    
+    {"name": "Премиум уход", "description": "🧖 MAX hygiene + 30 happy!", "category": "medicine", "price_stars": 30,
+     "effect_type": "premium_grooming", "effect_value": 100, "emoji": "🧖✨", "rarity": "epic"},
+    
+    # ==========================================
     # БУСТЫ (boost) - временные усиления (auto-activate on purchase)
     # ==========================================
     
