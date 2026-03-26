@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>🐱 Cute Pixar Cat</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #1a1a2e 100%);
+            min-height: 100vh; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Comic Sans MS', cursive;
+        }
+        h1 { color: #FFB6C1; margin-bottom: 15px; text-shadow: 0 0 20px rgba(255,182,193,0.5); }
+        .controls { margin-bottom: 12px; }
+        .controls button { 
+            background: linear-gradient(135deg, #FF6B9D, #FF8FB1); 
+            border: none;
+            padding: 10px 20px; 
+            border-radius: 25px; 
+            color: #fff; 
+            margin: 4px; 
+            cursor: pointer;
+            font-size: 14px;
+            font-family: inherit;
+            box-shadow: 0 4px 15px rgba(255,107,157,0.4);
+            transition: all 0.3s;
+        }
+        .controls button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(255,107,157,0.6); }
+        .controls button.active { background: linear-gradient(135deg, #FF8FB1, #FFB6C1); }
+        #canvas { 
+            border-radius: 30px; 
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5), 0 0 80px rgba(255,182,193,0.15);
+        }
+    </style>
+</head>
+<body>
+    <h1>✨ Cute Pixar Kitty ✨</h1>
+    <div class="controls">
+        <button onclick="setMood('happy')" id="m-happy" class="active">😊 Happy</button>
+        <button onclick="setMood('curious')" id="m-curious">🤔 Curious</button>
+        <button onclick="setMood('sleepy')" id="m-sleepy">😴 Sleepy</button>
+        <button onclick="setMood('love')" id="m-love">😍 Love</button>
+    </div>
+    <canvas id="canvas" width="700" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let frame = 0;
+let mood = 'happy';
+
+const cat = {
+    x: W / 2,
+    y: H * 0.65,
+    breathe: 0,
+    blink: 0,
+    blinking: false,
+    blinkTimer: 150,
+    bounce: 0,
+    tail: 0,
+    earWiggle: 0,
+    purr: 0,
+    headTilt: 0,
+    targetTilt: 0
+};
+
+function setMood(m) {
+    mood = m;
+    document.querySelectorAll('.controls button').forEach(b => b.classList.remove('active'));
+    document.getElementById('m-' + m)?.classList.add('active');
+    
+    if (m === 'curious') cat.targetTilt = 0.2;
+    else if (m === 'love') cat.targetTilt = -0.1;
+    else cat.targetTilt = 0;
+}
+
+// ============ CUTE BACKGROUND ============
+function drawBackground() {
+    // Soft gradient sky
+    const sky = ctx.createLinearGradient(0, 0, 0, H);
+    sky.addColorStop(0, '#87CEEB');
+    sky.addColorStop(0.4, '#B0E0E6');
+    sky.addColorStop(0.7, '#98FB98');
+    sky.addColorStop(1, '#90EE90');
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Cute clouds
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    [[100, 60], [300, 40], [550, 70], [650, 50]].forEach(([cx, cy]) => {
+        const wobble = Math.sin(frame * 0.01 + cx) * 3;
+        ctx.beginPath();
+        ctx.arc(cx, cy + wobble, 25, 0, Math.PI * 2);
+        ctx.arc(cx + 30, cy - 5 + wobble, 30, 0, Math.PI * 2);
+        ctx.arc(cx + 60, cy + wobble, 22, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    // Sun with cute face
+    const sunX = 600, sunY = 80;
+    ctx.fillStyle = '#FFD700';
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 45, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Sun glow
+    const sunGlow = ctx.createRadialGradient(sunX, sunY, 45, sunX, sunY, 100);
+    sunGlow.addColorStop(0, 'rgba(255, 215, 0, 0.4)');
+    sunGlow.addColorStop(1, 'transparent');
+    ctx.fillStyle = sunGlow;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY, 100, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Sun face
+    ctx.fillStyle = '#FF8C00';
+    ctx.beginPath();
+    ctx.arc(sunX - 12, sunY - 8, 5, 0, Math.PI * 2);
+    ctx.arc(sunX + 12, sunY - 8, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = '#FF8C00';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(sunX, sunY + 5, 15, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+    
+    // Soft grass
+    const grass = ctx.createLinearGradient(0, H * 0.7, 0, H);
+    grass.addColorStop(0, '#7CCD7C');
+    grass.addColorStop(1, '#228B22');
+    ctx.fillStyle = grass;
+    ctx.fillRect(0, H * 0.7, W, H * 0.3);
+    
+    // Cute flowers
+    const flowerColors = ['#FF69B4', '#FFB6C1', '#DDA0DD', '#FF6347', '#FFD700'];
+    for (let i = 0; i < 15; i++) {
+        const fx = (i * 51) % W;
+        const fy = H * 0.75 + (i % 4) * 15;
+        const fc = flowerColors[i % flowerColors.length];
+        const wobble = Math.sin(frame * 0.03 + i) * 2;
+        
+        // Stem
+        ctx.strokeStyle = '#228B22';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(fx, fy + 20);
+        ctx.lineTo(fx + wobble, fy);
+        ctx.stroke();
+        
+        // Petals
+        ctx.fillStyle = fc;
+        for (let p = 0; p < 5; p++) {
+            const angle = (p / 5) * Math.PI * 2;
+            ctx.beginPath();
+            ctx.ellipse(fx + wobble + Math.cos(angle) * 6, fy + Math.sin(angle) * 6, 5, 8, angle, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        // Center
+        ctx.fillStyle = '#FFD700';
+        ctx.beginPath();
+        ctx.arc(fx + wobble, fy, 4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Butterflies
+    const butterflyColors = ['#FF69B4', '#87CEEB', '#DDA0DD'];
+    for (let i = 0; i < 3; i++) {
+        const bx = 100 + i * 250 + Math.sin(frame * 0.02 + i * 2) * 50;
+        const by = 150 + Math.sin(frame * 0.03 + i) * 30;
+        const wingFlap = Math.sin(frame * 0.3 + i) * 0.5;
+        
+        ctx.fillStyle = butterflyColors[i];
+        ctx.save();
+        ctx.translate(bx, by);
+        // Wings
+        ctx.beginPath();
+        ctx.ellipse(-8, 0, 8, 12, wingFlap, 0, Math.PI * 2);
+        ctx.ellipse(8, 0, 8, 12, -wingFlap, 0, Math.PI * 2);
+        ctx.fill();
+        // Body
+        ctx.fillStyle = '#4a4a4a';
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 2, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+    }
+}
+
+// ============ CUTE FLUFFY FUR ============
+function drawFluffyPart(x, y, w, h, color, fluffiness = 1) {
+    // Soft base
+    const grad = ctx.createRadialGradient(x - w * 0.2, y - h * 0.3, 0, x, y, Math.max(w, h) * 1.2);
+    grad.addColorStop(0, lightenColor(color, 40));
+    grad.addColorStop(0.5, color);
+    grad.addColorStop(1, darkenColor(color, 30));
+    
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Fluffy edges
+    if (fluffiness > 0) {
+        const fluffs = Math.floor(20 * fluffiness);
+        for (let i = 0; i < fluffs; i++) {
+            const angle = (i / fluffs) * Math.PI * 2;
+            const fx = x + Math.cos(angle) * w * 0.9;
+            const fy = y + Math.sin(angle) * h * 0.9;
+            const fsize = 3 + Math.random() * 4 * fluffiness;
+            
+            ctx.fillStyle = `rgba(255, 250, 245, ${0.3 + Math.random() * 0.3})`;
+            ctx.beginPath();
+            ctx.arc(fx, fy, fsize, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+}
+
+function lightenColor(hex, amount) {
+    const num = parseInt(hex.slice(1), 16);
+    const r = Math.min(255, (num >> 16) + amount);
+    const g = Math.min(255, ((num >> 8) & 0x00FF) + amount);
+    const b = Math.min(255, (num & 0x0000FF) + amount);
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+function darkenColor(hex, amount) {
+    const num = parseInt(hex.slice(1), 16);
+    const r = Math.max(0, (num >> 16) - amount);
+    const g = Math.max(0, ((num >> 8) & 0x00FF) - amount);
+    const b = Math.max(0, (num & 0x0000FF) - amount);
+    return `rgb(${r}, ${g}, ${b})`;
+}
+
+// ============ SUPER CUTE BIG EYES ============
+function drawCuteEye(x, y, size, lookX, lookY, isBlinking, isLove = false) {
+    if (isBlinking) {
+        // Happy closed eye - curved line
+        ctx.strokeStyle = '#5D4037';
+        ctx.lineWidth = 3;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.5, Math.PI * 0.1, Math.PI * 0.9);
+        ctx.stroke();
+        
+        // Cute lashes
+        ctx.beginPath();
+        ctx.moveTo(x - size * 0.4, y - 2);
+        ctx.lineTo(x - size * 0.5, y - 8);
+        ctx.moveTo(x, y - 5);
+        ctx.lineTo(x, y - 12);
+        ctx.moveTo(x + size * 0.4, y - 2);
+        ctx.lineTo(x + size * 0.5, y - 8);
+        ctx.stroke();
+        return;
+    }
+    
+    if (isLove) {
+        // Heart eyes!
+        ctx.fillStyle = '#FF1493';
+        const hs = size * 1.2;
+        ctx.beginPath();
+        ctx.moveTo(x, y + hs * 0.3);
+        ctx.bezierCurveTo(x - hs * 0.5, y - hs * 0.3, x - hs, y + hs * 0.1, x, y + hs * 0.7);
+        ctx.bezierCurveTo(x + hs, y + hs * 0.1, x + hs * 0.5, y - hs * 0.3, x, y + hs * 0.3);
+        ctx.fill();
+        
+        // Sparkle
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+        ctx.beginPath();
+        ctx.arc(x - hs * 0.25, y, hs * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    
+    // Big white eye
+    const eyeGrad = ctx.createRadialGradient(x - size * 0.3, y - size * 0.3, 0, x, y, size * 1.1);
+    eyeGrad.addColorStop(0, '#FFFFFF');
+    eyeGrad.addColorStop(0.8, '#F5F5F5');
+    eyeGrad.addColorStop(1, '#E8E8E8');
+    
+    ctx.fillStyle = eyeGrad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, size, size * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Big cute iris
+    const irisX = x + lookX * size * 0.15;
+    const irisY = y + lookY * size * 0.1;
+    const irisR = size * 0.65;
+    
+    // Iris gradient - cute green/amber
+    const irisGrad = ctx.createRadialGradient(irisX - irisR * 0.2, irisY - irisR * 0.2, 0, irisX, irisY, irisR);
+    irisGrad.addColorStop(0, '#7CB342');
+    irisGrad.addColorStop(0.4, '#558B2F');
+    irisGrad.addColorStop(0.8, '#33691E');
+    irisGrad.addColorStop(1, '#1B5E20');
+    
+    ctx.fillStyle = irisGrad;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisR, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Cute sparkle ring in iris
+    ctx.strokeStyle = 'rgba(150, 200, 100, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisR * 0.7, 0, Math.PI * 2);
+    ctx.stroke();
+    
+    // Big pupil
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath();
+    ctx.ellipse(irisX, irisY, irisR * 0.35, irisR * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // BIG sparkle highlight - this makes it cute!
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.35, y - size * 0.3, size * 0.28, size * 0.22, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Secondary sparkle
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.arc(x + size * 0.2, y + size * 0.25, size * 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Tiny sparkle
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.arc(x - size * 0.15, y - size * 0.45, size * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ============ CUTE PINK NOSE ============
+function drawCuteNose(x, y, size) {
+    // Soft pink nose
+    const noseGrad = ctx.createRadialGradient(x - size * 0.2, y - size * 0.3, 0, x, y, size * 1.5);
+    noseGrad.addColorStop(0, '#FFB6C1');
+    noseGrad.addColorStop(0.5, '#FF91A4');
+    noseGrad.addColorStop(1, '#DB7093');
+    
+    ctx.fillStyle = noseGrad;
+    ctx.beginPath();
+    // Cute triangle nose
+    ctx.moveTo(x, y - size * 0.6);
+    ctx.quadraticCurveTo(x + size * 0.9, y + size * 0.2, x + size * 0.4, y + size * 0.5);
+    ctx.quadraticCurveTo(x, y + size * 0.7, x - size * 0.4, y + size * 0.5);
+    ctx.quadraticCurveTo(x - size * 0.9, y + size * 0.2, x, y - size * 0.6);
+    ctx.fill();
+    
+    // Shine
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.15, y - size * 0.2, size * 0.25, size * 0.18, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ============ MAIN CUTE CAT ============
+function drawCuteCat() {
+    const x = cat.x;
+    const y = cat.y;
+    const breathe = Math.sin(cat.breathe) * 5;
+    const bounce = Math.sin(cat.bounce) * (mood === 'happy' ? 8 : 3);
+    const purr = Math.sin(cat.purr * 5) * (mood === 'happy' ? 2 : 0);
+    
+    ctx.save();
+    ctx.translate(x, y + breathe - bounce);
+    
+    // Cute round shadow
+    ctx.fillStyle = 'rgba(0, 100, 0, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(0, 80 + bounce, 70, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // === FLUFFY TAIL ===
+    ctx.save();
+    ctx.translate(55, 10);
+    const tailWag = Math.sin(cat.tail) * 0.5;
+    ctx.rotate(tailWag - 0.3);
+    
+    // Tail segments - fluffy!
+    for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        const tx = t * 15;
+        const ty = -t * 70;
+        const ts = 18 - t * 6;
+        drawFluffyPart(tx, ty, ts, ts * 0.9, '#FFB07C', 0.8);
+    }
+    ctx.restore();
+    
+    // === BACK LEGS (little paws visible) ===
+    drawFluffyPart(-35, 50, 20, 15, '#FFB07C', 0.5);
+    drawFluffyPart(35, 50, 20, 15, '#FFB07C', 0.5);
+    
+    // Toe beans!
+    ctx.fillStyle = '#FF91A4';
+    [[-35, 60], [35, 60]].forEach(([px, py]) => {
+        ctx.beginPath();
+        ctx.arc(px - 5, py, 4, 0, Math.PI * 2);
+        ctx.arc(px + 5, py, 4, 0, Math.PI * 2);
+        ctx.arc(px, py + 5, 5, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    // === BIG FLUFFY BODY ===
+    drawFluffyPart(0, 10 + purr, 65, 55, '#FFB07C', 1);
+    
+    // White belly
+    ctx.fillStyle = 'rgba(255, 250, 245, 0.6)';
+    ctx.beginPath();
+    ctx.ellipse(0, 20, 40, 35, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // === FRONT PAWS ===
+    drawFluffyPart(-30, 45, 18, 14, '#FFB07C', 0.6);
+    drawFluffyPart(30, 45, 18, 14, '#FFB07C', 0.6);
+    
+    // Front toe beans
+    ctx.fillStyle = '#FF91A4';
+    [[-30, 55], [30, 55]].forEach(([px, py]) => {
+        ctx.beginPath();
+        ctx.arc(px - 4, py - 2, 3, 0, Math.PI * 2);
+        ctx.arc(px + 4, py - 2, 3, 0, Math.PI * 2);
+        ctx.arc(px, py + 3, 4, 0, Math.PI * 2);
+        ctx.fill();
+    });
+    
+    // === CHEST FLUFF ===
+    ctx.fillStyle = 'rgba(255, 250, 245, 0.7)';
+    ctx.beginPath();
+    ctx.ellipse(0, -20, 35, 25, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Fluffy chest detail
+    for (let i = 0; i < 8; i++) {
+        const angle = Math.PI * 0.3 + (i / 7) * Math.PI * 0.4;
+        const fx = Math.cos(angle) * 30;
+        const fy = -20 + Math.sin(angle) * 20;
+        ctx.fillStyle = 'rgba(255, 252, 248, 0.5)';
+        ctx.beginPath();
+        ctx.ellipse(fx, fy, 8, 12, angle - Math.PI/2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // === BIG CUTE HEAD ===
+    ctx.save();
+    cat.headTilt += (cat.targetTilt - cat.headTilt) * 0.05;
+    ctx.rotate(cat.headTilt);
+    
+    drawFluffyPart(0, -65, 55, 48, '#FFB07C', 1.2);
+    
+    // Cheek fluff
+    drawFluffyPart(-42, -55, 22, 18, '#FFCBA4', 0.8);
+    drawFluffyPart(42, -55, 22, 18, '#FFCBA4', 0.8);
+    
+    // === CUTE EARS ===
+    [[-35, -105], [35, -105]].forEach(([ex, ey], idx) => {
+        const wiggle = Math.sin(cat.earWiggle + idx * Math.PI) * 0.1;
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(wiggle + (idx === 0 ? -0.3 : 0.3));
+        
+        // Outer ear
+        drawFluffyPart(0, 0, 20, 28, '#FFB07C', 0.6);
+        
+        // Inner ear - pink!
+        ctx.fillStyle = '#FFB6C1';
+        ctx.beginPath();
+        ctx.ellipse(0, 5, 12, 18, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Ear fluff at base
+        ctx.fillStyle = 'rgba(255, 250, 245, 0.6)';
+        ctx.beginPath();
+        ctx.ellipse(0, 22, 15, 8, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        ctx.restore();
+    });
+    
+    // === BIG CUTE EYES ===
+    const blink = mood === 'sleepy' ? (Math.sin(frame * 0.05) > 0.7) : cat.blinking;
+    const lookX = Math.sin(frame * 0.01) * 0.5;
+    const lookY = mood === 'curious' ? -0.3 : Math.cos(frame * 0.015) * 0.2;
+    
+    drawCuteEye(-18, -70, 18, lookX, lookY, blink, mood === 'love');
+    drawCuteEye(18, -70, 18, lookX, lookY, blink, mood === 'love');
+    
+    // Eyebrows for expression
+    ctx.strokeStyle = '#D4A574';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    if (mood === 'curious') {
+        // Raised eyebrow
+        ctx.beginPath();
+        ctx.moveTo(-30, -95);
+        ctx.quadraticCurveTo(-18, -100, -6, -95);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(6, -92);
+        ctx.quadraticCurveTo(18, -90, 30, -92);
+        ctx.stroke();
+    }
+    
+    // === CUTE NOSE ===
+    drawCuteNose(0, -48, 10);
+    
+    // === CUTE MOUTH ===
+    ctx.strokeStyle = '#8B6B5B';
+    ctx.lineWidth = 2.5;
+    ctx.lineCap = 'round';
+    
+    if (mood === 'happy' || mood === 'love') {
+        // Big smile!
+        ctx.beginPath();
+        ctx.moveTo(-12, -38);
+        ctx.quadraticCurveTo(0, -30, 12, -38);
+        ctx.stroke();
+        
+        // Smile lines
+        ctx.beginPath();
+        ctx.moveTo(-15, -40);
+        ctx.lineTo(-12, -38);
+        ctx.moveTo(15, -40);
+        ctx.lineTo(12, -38);
+        ctx.stroke();
+    } else if (mood === 'sleepy') {
+        // Tiny mouth
+        ctx.beginPath();
+        ctx.moveTo(-5, -38);
+        ctx.lineTo(5, -38);
+        ctx.stroke();
+    } else {
+        // Neutral w mouth
+        ctx.beginPath();
+        ctx.moveTo(-10, -40);
+        ctx.quadraticCurveTo(-5, -36, 0, -40);
+        ctx.quadraticCurveTo(5, -36, 10, -40);
+        ctx.stroke();
+    }
+    
+    // === WHISKERS ===
+    ctx.strokeStyle = 'rgba(200, 180, 160, 0.8)';
+    ctx.lineWidth = 1.5;
+    
+    [[-1, 0, 1], [-1, 0, 1]].forEach((offsets, side) => {
+        const dir = side === 0 ? -1 : 1;
+        offsets.forEach((off, i) => {
+            const wobble = Math.sin(frame * 0.05 + i + side * Math.PI) * 2;
+            ctx.beginPath();
+            ctx.moveTo(dir * 22, -45 + i * 5);
+            ctx.quadraticCurveTo(dir * 45, -48 + i * 4 + wobble, dir * 60, -44 + i * 6 + wobble);
+            ctx.stroke();
+        });
+    });
+    
+    // === BLUSH ===
+    ctx.fillStyle = 'rgba(255, 150, 180, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(-32, -55, 12, 8, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(32, -55, 12, 8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Love hearts floating
+    if (mood === 'love') {
+        ctx.fillStyle = '#FF69B4';
+        for (let i = 0; i < 5; i++) {
+            const hx = -40 + i * 20 + Math.sin(frame * 0.05 + i) * 10;
+            const hy = -120 - i * 15 - (frame * 0.5 + i * 20) % 60;
+            const hs = 8 - i;
+            ctx.globalAlpha = 1 - (i * 0.15);
+            ctx.beginPath();
+            ctx.moveTo(hx, hy);
+            ctx.bezierCurveTo(hx - hs, hy - hs, hx - hs, hy + hs/2, hx, hy + hs);
+            ctx.bezierCurveTo(hx + hs, hy + hs/2, hx + hs, hy - hs, hx, hy);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+    
+    // Sleepy Zzz
+    if (mood === 'sleepy') {
+        ctx.font = 'bold 20px Comic Sans MS';
+        ctx.fillStyle = '#87CEEB';
+        for (let i = 0; i < 3; i++) {
+            const zx = 50 + i * 15;
+            const zy = -100 - i * 20 - Math.sin(frame * 0.03 + i) * 5;
+            ctx.globalAlpha = 0.8 - i * 0.2;
+            ctx.fillText('Z', zx, zy);
+        }
+        ctx.globalAlpha = 1;
+    }
+    
+    ctx.restore(); // head
+    ctx.restore(); // main
+}
+
+// ============ SPARKLES ============
+function drawSparkles() {
+    if (mood === 'happy' || mood === 'love') {
+        ctx.fillStyle = '#FFD700';
+        for (let i = 0; i < 8; i++) {
+            const sx = 150 + Math.sin(frame * 0.02 + i) * 200 + (i * 80);
+            const sy = 100 + Math.cos(frame * 0.025 + i * 0.5) * 100;
+            const ss = 3 + Math.sin(frame * 0.1 + i) * 2;
+            const alpha = 0.5 + Math.sin(frame * 0.1 + i) * 0.5;
+            
+            ctx.globalAlpha = alpha;
+            // 4-point star
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - ss * 2);
+            ctx.lineTo(sx + ss * 0.5, sy - ss * 0.5);
+            ctx.lineTo(sx + ss * 2, sy);
+            ctx.lineTo(sx + ss * 0.5, sy + ss * 0.5);
+            ctx.lineTo(sx, sy + ss * 2);
+            ctx.lineTo(sx - ss * 0.5, sy + ss * 0.5);
+            ctx.lineTo(sx - ss * 2, sy);
+            ctx.lineTo(sx - ss * 0.5, sy - ss * 0.5);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+}
+
+// ============ ANIMATION ============
+function update() {
+    cat.breathe += 0.04;
+    cat.bounce += mood === 'happy' ? 0.08 : 0.03;
+    cat.tail += 0.06;
+    cat.earWiggle += 0.03;
+    cat.purr += 0.1;
+    
+    // Blinking
+    cat.blinkTimer--;
+    if (cat.blinkTimer <= 0 && !cat.blinking) {
+        cat.blinking = true;
+        cat.blinkTimer = mood === 'sleepy' ? 5 : 12;
+    }
+    if (cat.blinking && cat.blinkTimer <= 0) {
+        cat.blinking = false;
+        cat.blinkTimer = mood === 'sleepy' ? 60 : 180 + Math.random() * 100;
+    }
+}
+
+// ============ RENDER ============
+function render() {
+    frame++;
+    update();
+    
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+    drawCuteCat();
+    drawSparkles();
+    
+    requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>

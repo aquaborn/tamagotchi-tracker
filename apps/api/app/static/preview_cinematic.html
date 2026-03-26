@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>🎬 Ultra Cinematic Pet - Pixar Style</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #000; 
+            min-height: 100vh; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        h1 { 
+            color: #ffd700; 
+            margin-bottom: 15px; 
+            text-shadow: 0 0 30px rgba(255,215,0,0.5);
+            font-size: 1.8em;
+        }
+        .controls { margin-bottom: 10px; }
+        .controls button { 
+            background: linear-gradient(135deg, #1a1a3a, #2a2a4a); 
+            border: 1px solid #3a3a5a;
+            padding: 10px 20px; 
+            border-radius: 10px; 
+            color: #ccc; 
+            margin: 4px; 
+            cursor: pointer; 
+            font-size: 14px;
+            transition: all 0.3s;
+        }
+        .controls button:hover { 
+            background: linear-gradient(135deg, #2a2a4a, #3a3a5a); 
+            transform: translateY(-2px);
+        }
+        .controls button.active { 
+            background: linear-gradient(135deg, #4a3a6a, #6a4a8a); 
+            border-color: #9a7aba;
+            box-shadow: 0 0 20px rgba(150,120,180,0.5); 
+        }
+        #mainCanvas { 
+            border-radius: 20px; 
+            box-shadow: 
+                0 20px 60px rgba(0,0,0,0.8),
+                0 0 100px rgba(100,150,255,0.1),
+                inset 0 0 100px rgba(255,255,255,0.02);
+        }
+        .info { color: #666; font-size: 11px; margin-top: 15px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>🎬 Pixar-Style Rendering</h1>
+    <div class="controls">
+        <button onclick="setScene('golden')" id="sc-golden" class="active">🌅 Golden Hour</button>
+        <button onclick="setScene('night')" id="sc-night">🌙 Moonlight</button>
+        <button onclick="setScene('studio')" id="sc-studio">📸 Studio</button>
+        <button onclick="setScene('forest')" id="sc-forest">🌲 Forest</button>
+    </div>
+    <div class="controls">
+        <button onclick="setAnim('idle')" id="an-idle" class="active">😊 Idle</button>
+        <button onclick="setAnim('curious')" id="an-curious">🤔 Curious</button>
+        <button onclick="setAnim('happy')" id="an-happy">😸 Happy</button>
+        <button onclick="setAnim('sleepy')" id="an-sleepy">😴 Sleepy</button>
+    </div>
+    <canvas id="mainCanvas" width="800" height="550"></canvas>
+    <div class="info">Subsurface scattering • Rim lighting • Ambient occlusion • Fur detail</div>
+
+<script>
+const canvas = document.getElementById('mainCanvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let frame = 0;
+let currentScene = 'golden';
+let currentAnim = 'idle';
+
+const cat = {
+    x: W / 2,
+    y: H * 0.75,
+    breathe: 0,
+    blink: 0,
+    isBlinking: false,
+    blinkTimer: 200,
+    earTwitch: 0,
+    tailPhase: 0,
+    headTilt: 0,
+    pupilX: 0,
+    pupilY: 0,
+    purr: 0
+};
+
+function setScene(s) {
+    currentScene = s;
+    document.querySelectorAll('.controls button[id^="sc-"]').forEach(b => b.classList.remove('active'));
+    document.getElementById('sc-' + s)?.classList.add('active');
+}
+
+function setAnim(a) {
+    currentAnim = a;
+    document.querySelectorAll('.controls button[id^="an-"]').forEach(b => b.classList.remove('active'));
+    document.getElementById('an-' + a)?.classList.add('active');
+}
+
+// ============ CINEMATIC LIGHTING ============
+function getSceneLighting() {
+    const scenes = {
+        golden: {
+            sky: ['#FF8C42', '#FFD700', '#87CEEB'],
+            ambient: { r: 255, g: 200, b: 150 },
+            keyLight: { x: 0.8, y: 0.3, intensity: 1.2, color: '#FFE4B5' },
+            fillLight: { x: -0.5, y: 0.5, intensity: 0.4, color: '#87CEEB' },
+            rimLight: { intensity: 0.8, color: '#FFD700' },
+            ground: '#4a6030'
+        },
+        night: {
+            sky: ['#0a0a20', '#1a1a40', '#2a3a60'],
+            ambient: { r: 80, g: 100, b: 150 },
+            keyLight: { x: 0.7, y: 0.2, intensity: 0.6, color: '#E8E8FF' },
+            fillLight: { x: -0.3, y: 0.6, intensity: 0.2, color: '#4040A0' },
+            rimLight: { intensity: 0.5, color: '#8888FF' },
+            ground: '#1a2a1a'
+        },
+        studio: {
+            sky: ['#2a2a2a', '#3a3a3a', '#4a4a4a'],
+            ambient: { r: 200, g: 200, b: 210 },
+            keyLight: { x: 0.6, y: 0.4, intensity: 1.0, color: '#FFFFFF' },
+            fillLight: { x: -0.6, y: 0.3, intensity: 0.5, color: '#E0E0FF' },
+            rimLight: { intensity: 0.7, color: '#FFFFFF' },
+            ground: '#3a3a3a'
+        },
+        forest: {
+            sky: ['#87CEEB', '#98D8C8', '#B8E8D8'],
+            ambient: { r: 150, g: 200, b: 150 },
+            keyLight: { x: 0.5, y: 0.5, intensity: 0.9, color: '#FFFACD' },
+            fillLight: { x: -0.4, y: 0.4, intensity: 0.4, color: '#90EE90' },
+            rimLight: { intensity: 0.4, color: '#98FB98' },
+            ground: '#3a5a30'
+        }
+    };
+    return scenes[currentScene];
+}
+
+// ============ SCENE RENDERING ============
+function drawCinematicScene() {
+    const light = getSceneLighting();
+    
+    // Sky gradient
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, H * 0.7);
+    light.sky.forEach((c, i) => skyGrad.addColorStop(i / (light.sky.length - 1), c));
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Atmospheric fog
+    ctx.fillStyle = `rgba(${light.ambient.r}, ${light.ambient.g}, ${light.ambient.b}, 0.1)`;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Light source glow
+    if (currentScene === 'golden' || currentScene === 'forest') {
+        const sunX = W * light.keyLight.x, sunY = H * light.keyLight.y;
+        const sunGlow = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 200);
+        sunGlow.addColorStop(0, 'rgba(255, 240, 200, 0.8)');
+        sunGlow.addColorStop(0.3, 'rgba(255, 200, 100, 0.3)');
+        sunGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = sunGlow;
+        ctx.fillRect(0, 0, W, H);
+    }
+    
+    if (currentScene === 'night') {
+        // Moon
+        const moonX = W * 0.75, moonY = H * 0.15;
+        const moonGlow = ctx.createRadialGradient(moonX, moonY, 30, moonX, moonY, 150);
+        moonGlow.addColorStop(0, 'rgba(230, 230, 255, 0.9)');
+        moonGlow.addColorStop(0.3, 'rgba(180, 180, 255, 0.3)');
+        moonGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = moonGlow;
+        ctx.beginPath(); ctx.arc(moonX, moonY, 150, 0, Math.PI * 2); ctx.fill();
+        
+        ctx.fillStyle = '#F0F0FF';
+        ctx.beginPath(); ctx.arc(moonX, moonY, 35, 0, Math.PI * 2); ctx.fill();
+        
+        // Stars
+        for (let i = 0; i < 80; i++) {
+            const twinkle = Math.sin(frame * 0.02 + i * 3) * 0.5 + 0.5;
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.2 + twinkle * 0.8})`;
+            ctx.beginPath();
+            ctx.arc((i * 53) % W, (i * 37) % (H * 0.5), 0.5 + twinkle * 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    // Ground
+    const groundGrad = ctx.createLinearGradient(0, H * 0.7, 0, H);
+    groundGrad.addColorStop(0, light.ground);
+    groundGrad.addColorStop(1, '#1a2a1a');
+    ctx.fillStyle = groundGrad;
+    ctx.fillRect(0, H * 0.7, W, H * 0.3);
+    
+    // Ground texture
+    ctx.fillStyle = 'rgba(0,0,0,0.1)';
+    for (let i = 0; i < 30; i++) {
+        ctx.beginPath();
+        ctx.ellipse((i * 31) % W, H * 0.72 + (i % 5) * 8, 20 + (i % 3) * 10, 3, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+}
+
+// ============ FUR SHADER ============
+function drawFurSurface(x, y, width, height, baseColor, lightDir, ao = 0) {
+    const light = getSceneLighting();
+    
+    // Parse base color
+    const r = parseInt(baseColor.slice(1, 3), 16);
+    const g = parseInt(baseColor.slice(3, 5), 16);
+    const b = parseInt(baseColor.slice(5, 7), 16);
+    
+    // Calculate lighting
+    const lightIntensity = light.keyLight.intensity;
+    const ambient = 0.3;
+    
+    // Main fur gradient with subsurface scattering
+    const furGrad = ctx.createRadialGradient(
+        x + lightDir * width * 0.3, 
+        y - height * 0.3, 
+        0, 
+        x, y, 
+        Math.max(width, height) * 1.2
+    );
+    
+    // SSS - lighter core (light passes through)
+    const sssR = Math.min(255, r + 40);
+    const sssG = Math.min(255, g + 30);
+    const sssB = Math.min(255, b + 20);
+    
+    // Shadow color
+    const shadowR = Math.max(0, r - 60 - ao * 30);
+    const shadowG = Math.max(0, g - 50 - ao * 25);
+    const shadowB = Math.max(0, b - 40 - ao * 20);
+    
+    furGrad.addColorStop(0, `rgb(${sssR}, ${sssG}, ${sssB})`);
+    furGrad.addColorStop(0.4, `rgb(${r}, ${g}, ${b})`);
+    furGrad.addColorStop(0.8, `rgb(${shadowR}, ${shadowG}, ${shadowB})`);
+    furGrad.addColorStop(1, `rgb(${shadowR - 20}, ${shadowG - 15}, ${shadowB - 10})`);
+    
+    ctx.fillStyle = furGrad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, width, height, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Fur texture strokes
+    ctx.save();
+    ctx.clip();
+    
+    const furStrokes = 25;
+    for (let i = 0; i < furStrokes; i++) {
+        const angle = (i / furStrokes) * Math.PI * 2;
+        const strokeLen = Math.min(width, height) * (0.15 + Math.random() * 0.1);
+        const startR = Math.min(width, height) * 0.7;
+        
+        const sx = x + Math.cos(angle) * startR;
+        const sy = y + Math.sin(angle) * startR * (height / width);
+        const ex = x + Math.cos(angle) * (startR + strokeLen);
+        const ey = y + Math.sin(angle) * (startR + strokeLen) * (height / width);
+        
+        // Fur strand gradient
+        const strandLight = Math.cos(angle - lightDir) * 0.5 + 0.5;
+        ctx.strokeStyle = `rgba(${r + strandLight * 40}, ${g + strandLight * 30}, ${b + strandLight * 20}, 0.4)`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(sx, sy);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+    }
+    ctx.restore();
+    
+    // Rim light
+    if (light.rimLight.intensity > 0) {
+        ctx.strokeStyle = light.rimLight.color;
+        ctx.lineWidth = 2;
+        ctx.globalAlpha = light.rimLight.intensity * 0.4;
+        ctx.beginPath();
+        ctx.ellipse(x, y, width + 1, height + 1, 0, Math.PI * 0.7, Math.PI * 1.5);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+    }
+}
+
+// ============ REALISTIC EYE ============
+function drawPixarEye(x, y, size, lookX, lookY, isBlinking) {
+    const light = getSceneLighting();
+    
+    if (isBlinking) {
+        // Closed eye with lashes
+        ctx.strokeStyle = '#5a4a3a';
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.6, 0.3, Math.PI - 0.3);
+        ctx.stroke();
+        
+        // Lashes
+        for (let i = 0; i < 5; i++) {
+            const angle = 0.5 + (i / 4) * 2;
+            ctx.beginPath();
+            ctx.moveTo(x + Math.cos(angle) * size * 0.6, y + Math.sin(angle) * size * 0.5);
+            ctx.lineTo(x + Math.cos(angle) * size * 0.9, y + Math.sin(angle) * size * 0.7 - 3);
+            ctx.stroke();
+        }
+        return;
+    }
+    
+    // Eye socket shadow
+    ctx.fillStyle = 'rgba(80, 60, 50, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 2, size * 1.15, size * 1.0, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Eyeball with SSS
+    const eyeGrad = ctx.createRadialGradient(x - size * 0.3, y - size * 0.3, 0, x, y, size);
+    eyeGrad.addColorStop(0, '#FFFFFF');
+    eyeGrad.addColorStop(0.7, '#F8F8FF');
+    eyeGrad.addColorStop(1, '#E0E0E8');
+    ctx.fillStyle = eyeGrad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, size, size * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Iris
+    const irisX = x + lookX * size * 0.2;
+    const irisY = y + lookY * size * 0.15;
+    const irisSize = size * 0.55;
+    
+    // Iris gradient - deep amber/green
+    const irisGrad = ctx.createRadialGradient(irisX - irisSize * 0.2, irisY - irisSize * 0.2, 0, irisX, irisY, irisSize);
+    irisGrad.addColorStop(0, '#7CB342');  // Light green center
+    irisGrad.addColorStop(0.3, '#558B2F'); // Mid green
+    irisGrad.addColorStop(0.7, '#33691E'); // Dark green
+    irisGrad.addColorStop(1, '#1B5E20');   // Edge
+    
+    ctx.fillStyle = irisGrad;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisSize, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Iris detail lines
+    ctx.strokeStyle = 'rgba(100, 150, 50, 0.3)';
+    ctx.lineWidth = 0.5;
+    for (let i = 0; i < 12; i++) {
+        const angle = (i / 12) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(irisX + Math.cos(angle) * irisSize * 0.3, irisY + Math.sin(angle) * irisSize * 0.3);
+        ctx.lineTo(irisX + Math.cos(angle) * irisSize * 0.95, irisY + Math.sin(angle) * irisSize * 0.95);
+        ctx.stroke();
+    }
+    
+    // Pupil - vertical slit
+    const pupilH = irisSize * 0.8;
+    const pupilW = irisSize * 0.25;
+    ctx.fillStyle = '#0a0a0a';
+    ctx.beginPath();
+    ctx.ellipse(irisX, irisY, pupilW, pupilH, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Main highlight
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.3, y - size * 0.25, size * 0.22, size * 0.18, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Secondary highlight
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.beginPath();
+    ctx.arc(x + size * 0.25, y + size * 0.3, size * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Tiny sparkle
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+    ctx.beginPath();
+    ctx.arc(x - size * 0.15, y - size * 0.35, size * 0.06, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Upper eyelid shadow
+    ctx.fillStyle = 'rgba(60, 40, 30, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x, y - size * 0.3, size * 0.9, size * 0.4, 0, Math.PI, Math.PI * 2);
+    ctx.fill();
+}
+
+// ============ NOSE WITH SSS ============
+function drawPixarNose(x, y, size) {
+    // Nose with subsurface scattering (pinkish glow)
+    const noseGrad = ctx.createRadialGradient(x - size * 0.2, y - size * 0.3, 0, x, y, size * 1.5);
+    noseGrad.addColorStop(0, '#FFB5B5');  // Pink SSS
+    noseGrad.addColorStop(0.4, '#D48A8A');
+    noseGrad.addColorStop(0.8, '#8B5A5A');
+    noseGrad.addColorStop(1, '#5A3A3A');
+    
+    ctx.fillStyle = noseGrad;
+    ctx.beginPath();
+    ctx.moveTo(x, y - size * 0.8);
+    ctx.bezierCurveTo(x + size * 1.2, y - size * 0.3, x + size, y + size * 0.5, x, y + size * 0.3);
+    ctx.bezierCurveTo(x - size, y + size * 0.5, x - size * 1.2, y - size * 0.3, x, y - size * 0.8);
+    ctx.fill();
+    
+    // Nostrils
+    ctx.fillStyle = '#3a2020';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.35, y, size * 0.18, size * 0.12, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(x + size * 0.35, y, size * 0.18, size * 0.12, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Nose shine
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.15, y - size * 0.4, size * 0.25, size * 0.15, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Wet look highlight
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.3)';
+    ctx.beginPath();
+    ctx.arc(x + size * 0.1, y - size * 0.2, size * 0.1, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ============ MAIN CAT RENDERING ============
+function drawCinematicCat() {
+    const x = cat.x;
+    const y = cat.y;
+    const breathe = Math.sin(cat.breathe) * 3;
+    const purr = Math.sin(cat.purr * 3) * (currentAnim === 'happy' ? 2 : 0);
+    
+    ctx.save();
+    ctx.translate(x, y + breathe);
+    
+    // Ground shadow - soft and realistic
+    const shadowGrad = ctx.createRadialGradient(0, 15, 0, 0, 15, 80);
+    shadowGrad.addColorStop(0, 'rgba(0, 0, 0, 0.4)');
+    shadowGrad.addColorStop(0.5, 'rgba(0, 0, 0, 0.2)');
+    shadowGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = shadowGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 15, 70, 20, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // === TAIL ===
+    ctx.save();
+    ctx.translate(45, -40);
+    const tailWave = Math.sin(cat.tailPhase) * 0.3;
+    ctx.rotate(tailWave);
+    
+    // Tail fur
+    for (let i = 0; i < 8; i++) {
+        const t = i / 7;
+        const tx = t * 20;
+        const ty = -t * 70 + Math.sin(t * Math.PI + cat.tailPhase) * 15;
+        const tw = 12 - t * 4;
+        drawFurSurface(tx, ty, tw, tw * 0.8, '#D4A574', 0.5, t * 0.3);
+    }
+    ctx.restore();
+    
+    // === BACK LEGS ===
+    drawFurSurface(-25, 0, 18, 12, '#C49A6C', 0.3, 0.5);
+    drawFurSurface(25, 0, 18, 12, '#C49A6C', 0.3, 0.5);
+    
+    // Paw pads hint
+    ctx.fillStyle = '#E8A0A0';
+    ctx.beginPath();
+    ctx.ellipse(-25, 5, 6, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(25, 5, 6, 4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // === BODY ===
+    drawFurSurface(0, -35 + purr, 50, 38, '#D4A574', 0.4, 0.2);
+    
+    // Belly lighter area
+    ctx.fillStyle = 'rgba(255, 250, 235, 0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, -25, 30, 25, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // === FRONT LEGS ===
+    drawFurSurface(-20, -10, 14, 10, '#D4A574', 0.5, 0.3);
+    drawFurSurface(20, -10, 14, 10, '#D4A574', 0.5, 0.3);
+    
+    // === CHEST FLUFF ===
+    ctx.fillStyle = 'rgba(255, 248, 235, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(0, -50, 25, 18, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // === HEAD ===
+    ctx.save();
+    ctx.rotate(cat.headTilt);
+    
+    drawFurSurface(0, -80, 38, 32, '#D4A574', 0.5, 0.15);
+    
+    // Cheek fluff
+    drawFurSurface(-28, -75, 15, 12, '#E0B090', 0.6, 0.1);
+    drawFurSurface(28, -75, 15, 12, '#E0B090', 0.6, 0.1);
+    
+    // === EARS ===
+    [[-25, -105], [25, -105]].forEach(([ex, ey], idx) => {
+        const twitch = Math.sin(cat.earTwitch + idx * 2) * 0.08;
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(twitch * (idx === 0 ? 1 : -1) + (idx === 0 ? -0.2 : 0.2));
+        
+        // Outer ear with fur
+        drawFurSurface(0, 0, 14, 22, '#D4A574', idx === 0 ? 0.7 : 0.3, 0.2);
+        
+        // Inner ear (pink with SSS)
+        const innerGrad = ctx.createLinearGradient(0, -15, 0, 10);
+        innerGrad.addColorStop(0, '#FFD0D0');
+        innerGrad.addColorStop(0.5, '#FFBABA');
+        innerGrad.addColorStop(1, '#E8A0A0');
+        ctx.fillStyle = innerGrad;
+        ctx.beginPath();
+        ctx.ellipse(0, 2, 8, 14, 0, 0, Math.PI * 2);
+        ctx.fill();
+        
+        // Ear fur tufts
+        ctx.strokeStyle = '#C49A6C';
+        ctx.lineWidth = 1.5;
+        for (let i = 0; i < 4; i++) {
+            ctx.beginPath();
+            ctx.moveTo(-5 + i * 3, 15);
+            ctx.lineTo(-4 + i * 3, 20);
+            ctx.stroke();
+        }
+        
+        ctx.restore();
+    });
+    
+    // === FACE ===
+    // Forehead marking (subtle tabby M)
+    ctx.strokeStyle = 'rgba(180, 140, 100, 0.3)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(-15, -95);
+    ctx.lineTo(-5, -88);
+    ctx.lineTo(0, -92);
+    ctx.lineTo(5, -88);
+    ctx.lineTo(15, -95);
+    ctx.stroke();
+    
+    // Eyes
+    const lookX = Math.sin(frame * 0.01) * 0.5;
+    const lookY = Math.cos(frame * 0.015) * 0.3 + (currentAnim === 'curious' ? -0.5 : 0);
+    drawPixarEye(-12, -82, 11, lookX + cat.pupilX, lookY + cat.pupilY, cat.isBlinking);
+    drawPixarEye(12, -82, 11, lookX + cat.pupilX, lookY + cat.pupilY, cat.isBlinking);
+    
+    // Nose
+    drawPixarNose(0, -68, 7);
+    
+    // Mouth
+    ctx.strokeStyle = 'rgba(120, 90, 70, 0.7)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(-8, -62);
+    ctx.quadraticCurveTo(0, -58, 8, -62);
+    ctx.stroke();
+    
+    // Chin highlight
+    ctx.fillStyle = 'rgba(255, 250, 240, 0.3)';
+    ctx.beginPath();
+    ctx.ellipse(0, -58, 10, 6, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Whiskers with physics
+    ctx.strokeStyle = 'rgba(220, 200, 180, 0.8)';
+    ctx.lineWidth = 1;
+    const whiskerDroop = Math.sin(cat.breathe * 0.5) * 2;
+    
+    [[-1, 0, 1], [-1, 0, 1]].forEach((angles, side) => {
+        const dir = side === 0 ? -1 : 1;
+        angles.forEach((i, idx) => {
+            const baseX = dir * 15;
+            const baseY = -66 + idx * 5;
+            const endX = dir * 50;
+            const endY = -64 + idx * 6 + whiskerDroop;
+            const ctrlX = dir * 35;
+            const ctrlY = -68 + idx * 4;
+            
+            ctx.beginPath();
+            ctx.moveTo(baseX, baseY);
+            ctx.quadraticCurveTo(ctrlX, ctrlY, endX, endY);
+            ctx.stroke();
+        });
+    });
+    
+    // Cheek blush (subtle)
+    ctx.fillStyle = 'rgba(255, 180, 190, 0.15)';
+    ctx.beginPath();
+    ctx.ellipse(-22, -72, 10, 6, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(22, -72, 10, 6, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    
+    ctx.restore(); // head tilt
+    ctx.restore(); // main transform
+}
+
+// ============ ANIMATION ============
+function updateAnimation() {
+    cat.breathe += 0.04;
+    cat.tailPhase += 0.06;
+    cat.earTwitch += 0.02;
+    cat.purr += 0.1;
+    
+    // Blinking
+    cat.blinkTimer--;
+    if (cat.blinkTimer <= 0 && !cat.isBlinking) {
+        cat.isBlinking = true;
+        cat.blinkTimer = 8;
+    }
+    if (cat.isBlinking && cat.blinkTimer <= 0) {
+        cat.isBlinking = false;
+        cat.blinkTimer = 150 + Math.random() * 100;
+    }
+    
+    // Animation specific behaviors
+    switch (currentAnim) {
+        case 'curious':
+            cat.headTilt = Math.sin(frame * 0.03) * 0.15;
+            cat.pupilX = Math.sin(frame * 0.02) * 0.8;
+            cat.earTwitch += 0.05;
+            break;
+        case 'happy':
+            cat.headTilt = Math.sin(frame * 0.1) * 0.05;
+            cat.tailPhase += 0.1;
+            break;
+        case 'sleepy':
+            cat.headTilt = 0.1;
+            cat.blinkTimer = Math.min(cat.blinkTimer, 50);
+            break;
+        default:
+            cat.headTilt *= 0.95;
+            cat.pupilX *= 0.95;
+    }
+}
+
+// ============ MAIN LOOP ============
+function render() {
+    frame++;
+    updateAnimation();
+    
+    ctx.clearRect(0, 0, W, H);
+    drawCinematicScene();
+    drawCinematicCat();
+    
+    // Cinematic vignette
+    const vignette = ctx.createRadialGradient(W/2, H/2, H * 0.3, W/2, H/2, H * 0.8);
+    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.4)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
+    
+    // Film grain (subtle)
+    ctx.fillStyle = 'rgba(128, 128, 128, 0.02)';
+    for (let i = 0; i < 100; i++) {
+        ctx.fillRect(Math.random() * W, Math.random() * H, 1, 1);
+    }
+    
+    requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>

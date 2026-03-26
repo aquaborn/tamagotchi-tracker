@@ -1,10 +1,10 @@
 # Models package
 from app.models.pet import Base, PetModel
 from app.models.user import User, VPNConfig, Achievement
-from app.models.shop import ShopItem, UserInventory, ActiveBoost, StarTransaction
+from app.models.shop import ShopItem, UserInventory, ActiveBoost, StarTransaction, MarketListing
 
 __all__ = [
     "Base", "PetModel", 
     "User", "VPNConfig", "Achievement",
-    "ShopItem", "UserInventory", "ActiveBoost", "StarTransaction"
+    "ShopItem", "UserInventory", "ActiveBoost", "StarTransaction", "MarketListing"
 ]

@@ -7,6 +7,18 @@ router = Router()
 # URL Mini App (обновить после запуска cloudflared)
 MINI_APP_URL = "https://tests-kernel-athens-salem.trycloudflare.com"
 
+# Cache for bot username
+_bot_username = None
+
+
+async def get_bot_username(bot) -> str:
+    """Get bot username (cached)"""
+    global _bot_username
+    if _bot_username is None:
+        me = await bot.get_me()
+        _bot_username = me.username
+    return _bot_username
+
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):
@@ -147,8 +159,8 @@ async def cmd_rewards(message: types.Message):
 @router.message(Command("invite"))
 async def cmd_invite(message: types.Message):
     user_id = message.from_user.id
-    # TODO: Получить реферальный код из API
-    invite_link = f"https://t.me/YOUR_BOT?start=ref_{user_id}"
+    bot_username = await get_bot_username(message.bot)
+    invite_link = f"https://t.me/{bot_username}?start=ref_{user_id}"
     
     await message.answer(
         "👥 <b>Пригласи друга!</b>\n\n"

@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>🎬 Cinematic Pets - Movie Quality</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            background: #0a0a12;
+            min-height: 100vh; 
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-family: 'Segoe UI', sans-serif;
+        }
+        .row { display: flex; gap: 8px; margin-bottom: 10px; }
+        .row button { 
+            background: rgba(255,255,255,0.1); 
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 8px 16px; 
+            border-radius: 20px; 
+            color: #ddd; 
+            cursor: pointer;
+            font-size: 13px;
+            transition: all 0.3s;
+        }
+        .row button:hover { background: rgba(255,255,255,0.2); }
+        .row button.active { 
+            background: rgba(255,180,100,0.3);
+            border-color: rgba(255,180,100,0.5);
+            color: #fff;
+        }
+        .pet-row button.active { background: rgba(100,200,255,0.3); border-color: rgba(100,200,255,0.5); }
+        #canvas { 
+            border-radius: 16px; 
+            box-shadow: 0 30px 80px rgba(0,0,0,0.6);
+        }
+    </style>
+</head>
+<body>
+    <div class="row pet-row">
+        <button onclick="setPet('cat')" id="p-cat" class="active">🐱 Cat</button>
+        <button onclick="setPet('dog')" id="p-dog">🐶 Dog</button>
+        <button onclick="setPet('frog')" id="p-frog">🐸 Frog</button>
+        <button onclick="setPet('beaver')" id="p-beaver">🦫 Beaver</button>
+    </div>
+    <div class="row">
+        <button onclick="setMood('happy')" id="m-happy" class="active">😊 Happy</button>
+        <button onclick="setMood('curious')" id="m-curious">🤔 Curious</button>
+        <button onclick="setMood('sleepy')" id="m-sleepy">😴 Sleepy</button>
+        <button onclick="setMood('love')" id="m-love">😍 Love</button>
+    </div>
+    <div class="row">
+        <button onclick="setScene('sunset')" id="s-sunset" class="active">🌅 Sunset</button>
+        <button onclick="setScene('night')" id="s-night">🌙 Night</button>
+        <button onclick="setScene('cozy')" id="s-cozy">🏠 Cozy</button>
+    </div>
+    <canvas id="canvas" width="800" height="550"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+
+let frame = 0;
+let scene = 'sunset';
+let mood = 'happy';
+let petType = 'cat';
+
+const pet = {
+    x: W / 2,
+    y: H * 0.68,
+    breathe: 0,
+    blinking: false,
+    blinkTimer: 180,
+    tail: 0,
+    ear: 0,
+    look: { x: 0, y: 0, tx: 0, ty: 0 },
+    head: 0,
+    bounce: 0,
+    tongue: 0
+};
+
+function setPet(p) {
+    petType = p;
+    document.querySelectorAll('.pet-row button').forEach(b => b.classList.remove('active'));
+    document.getElementById('p-' + p)?.classList.add('active');
+}
+
+function setMood(m) {
+    mood = m;
+    document.querySelectorAll('.row:nth-child(2) button').forEach(b => b.classList.remove('active'));
+    document.getElementById('m-' + m)?.classList.add('active');
+}
+
+function setScene(s) {
+    scene = s;
+    document.querySelectorAll('.row:nth-child(3) button').forEach(b => b.classList.remove('active'));
+    document.getElementById('s-' + s)?.classList.add('active');
+}
+
+// ========== LIGHTING ==========
+function getLight() {
+    const lights = {
+        sunset: {
+            sky: [['#FF7043', 0], ['#FFB74D', 0.3], ['#90CAF9', 0.7], ['#5C6BC0', 1]],
+            sun: { x: 0.2, y: 0.45, color: '#FFF3E0', glow: '#FF8A65', r: 60 },
+            ambient: [1.05, 0.95, 0.85],
+            key: { angle: -0.8, intensity: 1.2, color: [255, 200, 150] },
+            rim: { intensity: 0.6, color: [255, 180, 120] },
+            ground: ['#4A6741', '#2D4A2D', '#1A2E1A']
+        },
+        night: {
+            sky: [['#0D1B2A', 0], ['#1B263B', 0.4], ['#415A77', 0.8], ['#778DA9', 1]],
+            sun: { x: 0.75, y: 0.15, color: '#E0E1DD', glow: '#778DA9', r: 35 },
+            ambient: [0.7, 0.75, 0.9],
+            key: { angle: 0.6, intensity: 0.5, color: [180, 190, 220] },
+            rim: { intensity: 0.4, color: [150, 160, 200] },
+            ground: ['#1A2E1A', '#0D1A0D', '#050A05']
+        },
+        cozy: {
+            sky: [['#2C1810', 0], ['#3D2317', 0.5], ['#4A2C1A', 1]],
+            sun: null,
+            ambient: [1.1, 0.9, 0.7],
+            key: { angle: -0.5, intensity: 1.0, color: [255, 180, 100] },
+            rim: { intensity: 0.3, color: [255, 200, 150] },
+            ground: ['#5D4037', '#4E342E', '#3E2723'],
+            indoor: true
+        }
+    };
+    return lights[scene];
+}
+
+// ========== BACKGROUND ==========
+function drawScene() {
+    const L = getLight();
+    
+    const sky = ctx.createLinearGradient(0, 0, 0, H * 0.7);
+    L.sky.forEach(([c, p]) => sky.addColorStop(p, c));
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, W, H);
+    
+    if (L.sun) {
+        const sx = W * L.sun.x, sy = H * L.sun.y;
+        for (let i = 4; i >= 0; i--) {
+            const r = L.sun.r + i * 40;
+            const glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
+            glow.addColorStop(0, L.sun.glow);
+            glow.addColorStop(1, 'transparent');
+            ctx.globalAlpha = 0.15 - i * 0.025;
+            ctx.fillStyle = glow;
+            ctx.beginPath();
+            ctx.arc(sx, sy, r, 0, Math.PI * 2);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = L.sun.color;
+        ctx.beginPath();
+        ctx.arc(sx, sy, L.sun.r * 0.6, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    if (scene === 'night') {
+        for (let i = 0; i < 100; i++) {
+            const twinkle = Math.sin(frame * 0.02 + i * 5) * 0.5 + 0.5;
+            ctx.fillStyle = `rgba(255, 255, 255, ${0.2 + twinkle * 0.6})`;
+            ctx.beginPath();
+            ctx.arc((i * 83) % W, (i * 47) % (H * 0.55), 0.5 + twinkle, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    
+    if (L.indoor) {
+        const fireGlow = ctx.createRadialGradient(W * 0.15, H * 0.8, 0, W * 0.15, H * 0.8, 200);
+        fireGlow.addColorStop(0, 'rgba(255, 100, 50, 0.2)');
+        fireGlow.addColorStop(1, 'transparent');
+        ctx.fillStyle = fireGlow;
+        ctx.fillRect(0, 0, W, H);
+    }
+    
+    const ground = ctx.createLinearGradient(0, H * 0.65, 0, H);
+    ground.addColorStop(0, L.ground[0]);
+    ground.addColorStop(0.5, L.ground[1]);
+    ground.addColorStop(1, L.ground[2]);
+    ctx.fillStyle = ground;
+    ctx.fillRect(0, H * 0.65, W, H * 0.35);
+}
+
+// ========== FUR/SKIN RENDERING ==========
+function drawBody(x, y, w, h, color, rotation = 0, ao = 0, texture = 'fur') {
+    const L = getLight();
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rotation);
+    
+    const [baseR, baseG, baseB] = color;
+    const lightAngle = L.key.angle;
+    const lightX = Math.cos(lightAngle) * w * 0.5;
+    const lightY = Math.sin(lightAngle) * h * 0.4;
+    
+    const furGrad = ctx.createRadialGradient(lightX, lightY - h * 0.2, 0, 0, 0, Math.max(w, h) * 1.1);
+    
+    const litR = Math.min(255, baseR + L.key.color[0] * 0.12 * L.key.intensity);
+    const litG = Math.min(255, baseG + L.key.color[1] * 0.1 * L.key.intensity);
+    const litB = Math.min(255, baseB + L.key.color[2] * 0.08 * L.key.intensity);
+    
+    const aoMult = 1 - ao * 0.3;
+    const shadR = (baseR - 40) * aoMult;
+    const shadG = (baseG - 35) * aoMult;
+    const shadB = (baseB - 30) * aoMult;
+    
+    furGrad.addColorStop(0, `rgb(${litR}, ${litG}, ${litB})`);
+    furGrad.addColorStop(0.4, `rgb(${baseR}, ${baseG}, ${baseB})`);
+    furGrad.addColorStop(0.85, `rgb(${shadR}, ${shadG}, ${shadB})`);
+    furGrad.addColorStop(1, `rgb(${shadR - 15}, ${shadG - 15}, ${shadB - 10})`);
+    
+    ctx.fillStyle = furGrad;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Texture
+    if (texture === 'fur') {
+        ctx.save();
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w, h, 0, 0, Math.PI * 2);
+        ctx.clip();
+        
+        for (let i = 0; i < 25; i++) {
+            const angle = (i / 25) * Math.PI * 2;
+            const strokeLight = Math.max(0.2, Math.cos(angle - lightAngle) * 0.5 + 0.5);
+            const len = Math.min(w, h) * 0.12;
+            const startDist = Math.min(w, h) * 0.75;
+            
+            const sx = Math.cos(angle) * startDist;
+            const sy = Math.sin(angle) * startDist * (h/w);
+            const ex = Math.cos(angle) * (startDist + len);
+            const ey = Math.sin(angle) * (startDist + len) * (h/w);
+            
+            ctx.strokeStyle = `rgba(${baseR + strokeLight * 30}, ${baseG + strokeLight * 25}, ${baseB + strokeLight * 20}, 0.3)`;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy);
+            ctx.lineTo(ex, ey);
+            ctx.stroke();
+        }
+        ctx.restore();
+    }
+    
+    // Rim light
+    if (L.rim.intensity > 0) {
+        ctx.strokeStyle = `rgba(${L.rim.color[0]}, ${L.rim.color[1]}, ${L.rim.color[2]}, ${L.rim.intensity * 0.35})`;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, w + 1, h + 1, 0, Math.PI * 0.6, Math.PI * 1.4);
+        ctx.stroke();
+    }
+    
+    ctx.restore();
+}
+
+// ========== EYES ==========
+function drawEye(x, y, size, lookX, lookY, blinking, eyeColor = [139, 195, 74], pupilType = 'round') {
+    if (blinking || (mood === 'sleepy' && Math.sin(frame * 0.05) > 0.5)) {
+        ctx.strokeStyle = '#4A3728';
+        ctx.lineWidth = 2.5;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.arc(x, y, size * 0.6, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+        return;
+    }
+    
+    // Love mode - hearts
+    if (mood === 'love') {
+        ctx.fillStyle = '#FF1493';
+        const hs = size * 1.1;
+        ctx.beginPath();
+        ctx.moveTo(x, y + hs * 0.25);
+        ctx.bezierCurveTo(x - hs * 0.5, y - hs * 0.35, x - hs, y + hs * 0.1, x, y + hs * 0.65);
+        ctx.bezierCurveTo(x + hs, y + hs * 0.1, x + hs * 0.5, y - hs * 0.35, x, y + hs * 0.25);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.beginPath();
+        ctx.arc(x - hs * 0.25, y - hs * 0.05, hs * 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        return;
+    }
+    
+    // Socket shadow
+    ctx.fillStyle = 'rgba(80, 60, 50, 0.2)';
+    ctx.beginPath();
+    ctx.ellipse(x, y + 2, size * 1.1, size * 0.95, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Sclera
+    const scleraGrad = ctx.createRadialGradient(x - size * 0.25, y - size * 0.2, 0, x, y, size);
+    scleraGrad.addColorStop(0, '#FFFFFF');
+    scleraGrad.addColorStop(0.7, '#FAF8F5');
+    scleraGrad.addColorStop(1, '#E8E4E0');
+    ctx.fillStyle = scleraGrad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, size, size * 0.9, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Iris
+    const irisX = x + lookX * size * 0.2;
+    const irisY = y + lookY * size * 0.15 + (mood === 'curious' ? -size * 0.05 : 0);
+    const irisR = size * (mood === 'curious' ? 0.55 : 0.5);
+    
+    const irisGrad = ctx.createRadialGradient(irisX - irisR * 0.2, irisY - irisR * 0.2, 0, irisX, irisY, irisR);
+    irisGrad.addColorStop(0, `rgb(${eyeColor[0] + 40}, ${eyeColor[1] + 30}, ${eyeColor[2] + 20})`);
+    irisGrad.addColorStop(0.4, `rgb(${eyeColor[0]}, ${eyeColor[1]}, ${eyeColor[2]})`);
+    irisGrad.addColorStop(1, `rgb(${eyeColor[0] - 50}, ${eyeColor[1] - 40}, ${eyeColor[2] - 30})`);
+    
+    ctx.fillStyle = irisGrad;
+    ctx.beginPath();
+    ctx.arc(irisX, irisY, irisR, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Pupil
+    ctx.fillStyle = '#0a0a0a';
+    if (pupilType === 'slit') {
+        ctx.beginPath();
+        ctx.ellipse(irisX, irisY, irisR * 0.2, irisR * 0.75, 0, 0, Math.PI * 2);
+        ctx.fill();
+    } else {
+        ctx.beginPath();
+        ctx.arc(irisX, irisY, irisR * 0.4, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Catchlights
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.9)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.3, y - size * 0.25, size * 0.18, size * 0.14, -0.3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+    ctx.beginPath();
+    ctx.arc(x + size * 0.15, y + size * 0.2, size * 0.08, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ========== NOSE ==========
+function drawNose(x, y, size, color = [200, 130, 130], shape = 'cat') {
+    const noseGrad = ctx.createRadialGradient(x - size * 0.2, y - size * 0.3, 0, x, y, size * 1.5);
+    noseGrad.addColorStop(0, `rgb(${color[0] + 30}, ${color[1] + 30}, ${color[2] + 30})`);
+    noseGrad.addColorStop(0.5, `rgb(${color[0]}, ${color[1]}, ${color[2]})`);
+    noseGrad.addColorStop(1, `rgb(${color[0] - 50}, ${color[1] - 50}, ${color[2] - 50})`);
+    
+    ctx.fillStyle = noseGrad;
+    
+    if (shape === 'cat' || shape === 'beaver') {
+        ctx.beginPath();
+        ctx.moveTo(x, y - size * 0.7);
+        ctx.bezierCurveTo(x + size, y - size * 0.1, x + size * 0.8, y + size * 0.5, x, y + size * 0.3);
+        ctx.bezierCurveTo(x - size * 0.8, y + size * 0.5, x - size, y - size * 0.1, x, y - size * 0.7);
+        ctx.fill();
+    } else if (shape === 'dog') {
+        ctx.beginPath();
+        ctx.ellipse(x, y, size * 1.2, size * 0.9, 0, 0, Math.PI * 2);
+        ctx.fill();
+    } else if (shape === 'frog') {
+        ctx.beginPath();
+        ctx.ellipse(x, y, size * 0.4, size * 0.3, 0, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    
+    // Nostrils
+    ctx.fillStyle = `rgb(${color[0] - 80}, ${color[1] - 80}, ${color[2] - 80})`;
+    const nw = shape === 'dog' ? 0.3 : 0.15;
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.35, y, size * nw, size * 0.12, -0.4, 0, Math.PI * 2);
+    ctx.ellipse(x + size * 0.35, y, size * nw, size * 0.12, 0.4, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Shine
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(x - size * 0.1, y - size * 0.35, size * 0.22, size * 0.15, -0.5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+// ========== CAT ==========
+function drawCat() {
+    const x = pet.x, y = pet.y;
+    const breathe = Math.sin(pet.breathe) * 4;
+    const bounce = mood === 'happy' ? Math.abs(Math.sin(pet.bounce)) * 8 : 0;
+    const color = [215, 175, 135];
+    
+    ctx.save();
+    ctx.translate(x, y + breathe - bounce);
+    
+    // Shadow
+    drawShadow(0, 25 + bounce, 90);
+    
+    // Tail
+    ctx.save();
+    ctx.translate(60, -20);
+    ctx.rotate(-0.4 + Math.sin(pet.tail) * 0.3);
+    for (let i = 0; i < 8; i++) {
+        const t = i / 7;
+        drawBody(t * 25, -t * 80 + Math.sin(t * Math.PI + pet.tail * 0.5) * 15, 15 - t * 7, 13 - t * 6, color, 0, t * 0.3);
+    }
+    ctx.restore();
+    
+    // Back legs
+    drawBody(-35, 20, 25, 18, color, 0, 0.4);
+    drawBody(35, 20, 25, 18, color, 0, 0.4);
+    
+    // Body
+    drawBody(0, -20, 65, 52, color, 0, 0.1);
+    drawBelly(0, -10, 40, 32);
+    
+    // Front legs
+    drawBody(-28, 5, 20, 16, color, 0.1, 0.25);
+    drawBody(28, 5, 20, 16, color, -0.1, 0.25);
+    
+    // Chest
+    drawBelly(0, -45, 32, 22);
+    
+    // Head
+    ctx.save();
+    ctx.rotate(pet.head * 0.02 + (mood === 'curious' ? 0.15 : 0));
+    
+    drawBody(0, -75, 52, 44, color, 0, 0.05);
+    drawBody(-38, -68, 20, 16, [225, 185, 145], 0, 0.15); // Cheeks
+    drawBody(38, -68, 20, 16, [225, 185, 145], 0, 0.15);
+    
+    // Ears
+    [[-32, -112], [32, -112]].forEach(([ex, ey], idx) => {
+        const wiggle = Math.sin(pet.ear + idx * 2) * 0.08;
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate(wiggle + (idx === 0 ? -0.25 : 0.25));
+        drawBody(0, 0, 18, 26, color, 0, 0.15);
+        drawInnerEar(0, 4, 10, 16);
+        ctx.restore();
+    });
+    
+    // Face
+    drawEye(-16, -78, 14, pet.look.x, pet.look.y, pet.blinking, [139, 195, 74], 'slit');
+    drawEye(16, -78, 14, pet.look.x, pet.look.y, pet.blinking, [139, 195, 74], 'slit');
+    drawNose(0, -60, 9, [200, 130, 130], 'cat');
+    drawMouth(0, -52, 'cat');
+    drawWhiskers(0, -55);
+    drawBlush(-30, -68, 30, -68);
+    
+    ctx.restore();
+    ctx.restore();
+    
+    drawMoodEffects(x, y - 100);
+}
+
+// ========== DOG ==========
+function drawDog() {
+    const x = pet.x, y = pet.y;
+    const breathe = Math.sin(pet.breathe) * 5;
+    const bounce = mood === 'happy' ? Math.abs(Math.sin(pet.bounce * 1.5)) * 12 : 0;
+    const color = [180, 140, 100];
+    
+    ctx.save();
+    ctx.translate(x, y + breathe - bounce);
+    
+    drawShadow(0, 25 + bounce, 95);
+    
+    // Tail (wagging!)
+    ctx.save();
+    ctx.translate(65, -25);
+    const tailWag = Math.sin(pet.tail * 2) * 0.6;
+    ctx.rotate(-0.2 + tailWag);
+    for (let i = 0; i < 6; i++) {
+        const t = i / 5;
+        drawBody(t * 15, -t * 60, 14 - t * 5, 12 - t * 4, color, 0, t * 0.2);
+    }
+    ctx.restore();
+    
+    // Back legs
+    drawBody(-38, 25, 28, 20, color, 0, 0.4);
+    drawBody(38, 25, 28, 20, color, 0, 0.4);
+    
+    // Body
+    drawBody(0, -15, 70, 55, color, 0, 0.1);
+    drawBelly(0, -5, 45, 35);
+    
+    // Front legs
+    drawBody(-32, 10, 22, 18, color, 0.1, 0.25);
+    drawBody(32, 10, 22, 18, color, -0.1, 0.25);
+    
+    // Chest
+    drawBelly(0, -45, 35, 25);
+    
+    // Head
+    ctx.save();
+    ctx.rotate(pet.head * 0.025 + (mood === 'curious' ? 0.2 : 0));
+    
+    drawBody(0, -78, 55, 48, color, 0, 0.05);
+    
+    // Snout
+    drawBody(0, -58, 28, 22, [200, 165, 130], 0, 0.1);
+    
+    // Floppy ears
+    [[-45, -85], [45, -85]].forEach(([ex, ey], idx) => {
+        const flop = Math.sin(pet.bounce + idx) * 0.1 + 0.3;
+        ctx.save();
+        ctx.translate(ex, ey);
+        ctx.rotate((idx === 0 ? -0.4 : 0.4) + flop);
+        drawBody(0, 20, 18, 35, [150, 115, 80], 0, 0.2);
+        ctx.restore();
+    });
+    
+    // Face
+    drawEye(-18, -88, 15, pet.look.x, pet.look.y, pet.blinking, [101, 67, 33], 'round');
+    drawEye(18, -88, 15, pet.look.x, pet.look.y, pet.blinking, [101, 67, 33], 'round');
+    drawNose(0, -55, 12, [50, 40, 40], 'dog');
+    drawMouth(0, -45, 'dog');
+    drawBlush(-35, -75, 35, -75);
+    
+    // Tongue when happy
+    if (mood === 'happy') {
+        const tongueLen = 15 + Math.sin(pet.tongue) * 5;
+        ctx.fillStyle = '#E57373';
+        ctx.beginPath();
+        ctx.ellipse(0, -38 + tongueLen/2, 8, tongueLen/2, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = '#C62828';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(0, -42);
+        ctx.lineTo(0, -38 + tongueLen - 5);
+        ctx.stroke();
+    }
+    
+    ctx.restore();
+    ctx.restore();
+    
+    drawMoodEffects(x, y - 110);
+}
+
+// ========== FROG ==========
+function drawFrog() {
+    const x = pet.x, y = pet.y;
+    const breathe = Math.sin(pet.breathe) * 6;
+    const bounce = mood === 'happy' ? Math.abs(Math.sin(pet.bounce * 0.8)) * 20 : 0;
+    const color = [100, 180, 80];
+    
+    ctx.save();
+    ctx.translate(x, y + breathe - bounce);
+    
+    drawShadow(0, 20 + bounce, 85);
+    
+    // Back legs (big frog legs!)
+    ctx.save();
+    ctx.translate(-50, 10);
+    ctx.rotate(-0.3);
+    drawBody(0, 0, 35, 18, color, 0, 0.3, 'smooth');
+    drawBody(25, 15, 28, 14, color, 0.5, 0.3, 'smooth');
+    // Webbed foot
+    ctx.fillStyle = `rgb(${color[0] - 20}, ${color[1] - 20}, ${color[2] - 15})`;
+    for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.ellipse(45 + i * 8, 22, 6, 12, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+    
+    ctx.save();
+    ctx.translate(50, 10);
+    ctx.rotate(0.3);
+    drawBody(0, 0, 35, 18, color, 0, 0.3, 'smooth');
+    drawBody(-25, 15, 28, 14, color, -0.5, 0.3, 'smooth');
+    ctx.fillStyle = `rgb(${color[0] - 20}, ${color[1] - 20}, ${color[2] - 15})`;
+    for (let i = 0; i < 4; i++) {
+        ctx.beginPath();
+        ctx.ellipse(-45 - i * 8, 22, 6, 12, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+    ctx.restore();
+    
+    // Body (round!)
+    drawBody(0, -20, 75, 55, color, 0, 0.1, 'smooth');
+    
+    // Light belly
+    ctx.fillStyle = 'rgba(200, 230, 180, 0.5)';
+    ctx.beginPath();
+    ctx.ellipse(0, -10, 50, 40, 0, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Front legs
+    drawBody(-45, -5, 20, 12, color, 0.3, 0.25, 'smooth');
+    drawBody(45, -5, 20, 12, color, -0.3, 0.25, 'smooth');
+    
+    // Head
+    ctx.save();
+    ctx.rotate(pet.head * 0.02 + (mood === 'curious' ? 0.12 : 0));
+    
+    drawBody(0, -65, 60, 40, color, 0, 0.05, 'smooth');
+    
+    // Big bulging eyes on top!
+    [[-25, -90], [25, -90]].forEach(([ex, ey], idx) => {
+        // Eye bump
+        drawBody(ex, ey, 22, 20, color, 0, 0, 'smooth');
+        drawEye(ex, ey + 5, 16, pet.look.x, pet.look.y, pet.blinking, [255, 200, 50], 'round');
+    });
+    
+    // Wide mouth
+    drawNose(0, -55, 5, [80, 150, 60], 'frog');
+    
+    ctx.strokeStyle = 'rgba(60, 120, 50, 0.7)';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.arc(0, -50, 35, 0.1, Math.PI - 0.1);
+    ctx.stroke();
+    
+    if (mood === 'happy') {
+        ctx.beginPath();
+        ctx.arc(0, -50, 35, 0.2, Math.PI - 0.2);
+        ctx.stroke();
+    }
+    
+    drawBlush(-40, -60, 40, -60);
+    
+    ctx.restore();
+    ctx.restore();
+    
+    drawMoodEffects(x, y - 120);
+}
+
+// ========== BEAVER ==========
+function drawBeaver() {
+    const x = pet.x, y = pet.y;
+    const breathe = Math.sin(pet.breathe) * 4;
+    const bounce = mood === 'happy' ? Math.abs(Math.sin(pet.bounce)) * 6 : 0;
+    const color = [140, 100, 70];
+    
+    ctx.save();
+    ctx.translate(x, y + breathe - bounce);
+    
+    drawShadow(0, 30 + bounce, 100);
+    
+    // Flat tail!
+    ctx.save();
+    ctx.translate(0, 30);
+    ctx.rotate(Math.sin(pet.tail * 0.5) * 0.15);
+    ctx.fillStyle = `rgb(${color[0] - 40}, ${color[1] - 35}, ${color[2] - 30})`;
+    ctx.beginPath();
+    ctx.ellipse(0, 35, 35, 15, 0, 0, Math.PI * 2);
+    ctx.fill();
+    // Tail texture
+    ctx.strokeStyle = `rgba(${color[0] - 60}, ${color[1] - 55}, ${color[2] - 50}, 0.5)`;
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 8; i++) {
+        ctx.beginPath();
+        ctx.moveTo(-25 + i * 7, 25);
+        ctx.lineTo(-25 + i * 7, 45);
+        ctx.stroke();
+    }
+    ctx.restore();
+    
+    // Back legs
+    drawBody(-40, 20, 25, 18, color, 0, 0.4);
+    drawBody(40, 20, 25, 18, color, 0, 0.4);
+    
+    // Body (chunky!)
+    drawBody(0, -15, 70, 55, color, 0, 0.1);
+    drawBelly(0, -5, 45, 35);
+    
+    // Front paws
+    drawBody(-35, 8, 20, 15, color, 0.15, 0.25);
+    drawBody(35, 8, 20, 15, color, -0.15, 0.25);
+    
+    // Chest
+    drawBelly(0, -45, 35, 25);
+    
+    // Head
+    ctx.save();
+    ctx.rotate(pet.head * 0.02 + (mood === 'curious' ? 0.15 : 0));
+    
+    drawBody(0, -75, 52, 45, color, 0, 0.05);
+    
+    // Chubby cheeks!
+    drawBody(-38, -65, 22, 18, [160, 125, 95], 0, 0.1);
+    drawBody(38, -65, 22, 18, [160, 125, 95], 0, 0.1);
+    
+    // Small round ears
+    [[-35, -110], [35, -110]].forEach(([ex, ey], idx) => {
+        drawBody(ex, ey, 14, 14, color, 0, 0.2);
+        drawBody(ex, ey, 8, 8, [180, 140, 110], 0, 0);
+    });
+    
+    // Face
+    drawEye(-15, -80, 12, pet.look.x, pet.look.y, pet.blinking, [60, 40, 30], 'round');
+    drawEye(15, -80, 12, pet.look.x, pet.look.y, pet.blinking, [60, 40, 30], 'round');
+    drawNose(0, -62, 10, [60, 45, 40], 'beaver');
+    
+    // Big beaver teeth!
+    ctx.fillStyle = '#FFF8E7';
+    ctx.beginPath();
+    ctx.roundRect(-8, -52, 7, 14, 2);
+    ctx.roundRect(1, -52, 7, 14, 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(200, 180, 150, 0.5)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    
+    drawBlush(-32, -70, 32, -70);
+    drawWhiskers(0, -58);
+    
+    ctx.restore();
+    ctx.restore();
+    
+    drawMoodEffects(x, y - 100);
+}
+
+// ========== HELPERS ==========
+function drawShadow(x, y, size) {
+    const alpha = scene === 'night' ? 0.15 : 0.25;
+    const shadowGrad = ctx.createRadialGradient(x, y, 0, x, y, size);
+    shadowGrad.addColorStop(0, `rgba(0, 0, 0, ${alpha})`);
+    shadowGrad.addColorStop(0.6, `rgba(0, 0, 0, ${alpha * 0.4})`);
+    shadowGrad.addColorStop(1, 'transparent');
+    ctx.fillStyle = shadowGrad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, size, size * 0.25, 0, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawBelly(x, y, w, h) {
+    ctx.fillStyle = 'rgba(255, 250, 240, 0.25)';
+    ctx.beginPath();
+    ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawInnerEar(x, y, w, h) {
+    const grad = ctx.createLinearGradient(x, y - h, x, y + h/2);
+    grad.addColorStop(0, '#EABABA');
+    grad.addColorStop(1, '#C09090');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(x, y, w, h, 0, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawMouth(x, y, type) {
+    ctx.strokeStyle = 'rgba(100, 75, 60, 0.6)';
+    ctx.lineWidth = 2;
+    ctx.lineCap = 'round';
+    
+    if (mood === 'happy' && type !== 'frog') {
+        ctx.beginPath();
+        ctx.arc(x, y, 12, 0.15, Math.PI - 0.15);
+        ctx.stroke();
+    } else if (mood === 'sleepy') {
+        ctx.beginPath();
+        ctx.moveTo(x - 6, y);
+        ctx.lineTo(x + 6, y);
+        ctx.stroke();
+    } else {
+        ctx.beginPath();
+        ctx.moveTo(x - 8, y);
+        ctx.quadraticCurveTo(x, y + 4, x + 8, y);
+        ctx.stroke();
+    }
+}
+
+function drawWhiskers(x, y) {
+    ctx.strokeStyle = 'rgba(210, 195, 175, 0.7)';
+    ctx.lineWidth = 1.2;
+    
+    [[-1, 0, 1], [-1, 0, 1]].forEach((offs, side) => {
+        const dir = side === 0 ? -1 : 1;
+        offs.forEach((off, i) => {
+            const wave = Math.sin(frame * 0.02 + i + side) * 2;
+            ctx.beginPath();
+            ctx.moveTo(x + dir * 20, y + i * 5);
+            ctx.quadraticCurveTo(x + dir * 40, y - 3 + i * 4 + wave, x + dir * 55, y + i * 5 + wave);
+            ctx.stroke();
+        });
+    });
+}
+
+function drawBlush(x1, y1, x2, y2) {
+    ctx.fillStyle = 'rgba(255, 180, 190, 0.15)';
+    ctx.beginPath();
+    ctx.ellipse(x1, y1, 12, 8, -0.2, 0, Math.PI * 2);
+    ctx.ellipse(x2, y2, 12, 8, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawMoodEffects(x, y) {
+    // Love hearts
+    if (mood === 'love') {
+        ctx.fillStyle = '#FF69B4';
+        for (let i = 0; i < 5; i++) {
+            const hx = x - 50 + i * 25 + Math.sin(frame * 0.04 + i) * 15;
+            const hy = y - 30 - ((frame * 0.8 + i * 30) % 80);
+            const hs = 10 - i * 1.5;
+            const alpha = 1 - ((frame * 0.8 + i * 30) % 80) / 80;
+            ctx.globalAlpha = alpha;
+            ctx.beginPath();
+            ctx.moveTo(hx, hy);
+            ctx.bezierCurveTo(hx - hs, hy - hs, hx - hs, hy + hs/2, hx, hy + hs);
+            ctx.bezierCurveTo(hx + hs, hy + hs/2, hx + hs, hy - hs, hx, hy);
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+    
+    // Sleepy Zzz
+    if (mood === 'sleepy') {
+        ctx.font = 'bold 18px Arial';
+        ctx.fillStyle = '#7986CB';
+        for (let i = 0; i < 3; i++) {
+            const zx = x + 50 + i * 18;
+            const zy = y - 10 - i * 22 - Math.sin(frame * 0.025 + i) * 5;
+            ctx.globalAlpha = 0.8 - i * 0.2;
+            ctx.fillText('z', zx, zy);
+        }
+        ctx.globalAlpha = 1;
+    }
+    
+    // Happy sparkles
+    if (mood === 'happy') {
+        ctx.fillStyle = '#FFD54F';
+        for (let i = 0; i < 6; i++) {
+            const sx = x - 80 + (i * 35) + Math.sin(frame * 0.03 + i) * 20;
+            const sy = y - 50 + Math.cos(frame * 0.04 + i) * 25;
+            const ss = 3 + Math.sin(frame * 0.1 + i) * 2;
+            ctx.globalAlpha = 0.5 + Math.sin(frame * 0.1 + i) * 0.5;
+            ctx.beginPath();
+            ctx.moveTo(sx, sy - ss * 2);
+            ctx.lineTo(sx + ss * 0.4, sy - ss * 0.4);
+            ctx.lineTo(sx + ss * 2, sy);
+            ctx.lineTo(sx + ss * 0.4, sy + ss * 0.4);
+            ctx.lineTo(sx, sy + ss * 2);
+            ctx.lineTo(sx - ss * 0.4, sy + ss * 0.4);
+            ctx.lineTo(sx - ss * 2, sy);
+            ctx.lineTo(sx - ss * 0.4, sy - ss * 0.4);
+            ctx.closePath();
+            ctx.fill();
+        }
+        ctx.globalAlpha = 1;
+    }
+}
+
+// ========== POST PROCESS ==========
+function postProcess() {
+    const L = getLight();
+    const imageData = ctx.getImageData(0, 0, W, H);
+    const d = imageData.data;
+    for (let i = 0; i < d.length; i += 4) {
+        d[i] = Math.min(255, d[i] * L.ambient[0]);
+        d[i+1] = Math.min(255, d[i+1] * L.ambient[1]);
+        d[i+2] = Math.min(255, d[i+2] * L.ambient[2]);
+    }
+    ctx.putImageData(imageData, 0, 0);
+    
+    const vignette = ctx.createRadialGradient(W/2, H/2, H * 0.35, W/2, H/2, H * 0.85);
+    vignette.addColorStop(0, 'transparent');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.35)');
+    ctx.fillStyle = vignette;
+    ctx.fillRect(0, 0, W, H);
+}
+
+// ========== ANIMATION ==========
+function update() {
+    pet.breathe += 0.035;
+    pet.tail += 0.045;
+    pet.ear += 0.02;
+    pet.bounce += mood === 'happy' ? 0.08 : 0.03;
+    pet.tongue += 0.15;
+    
+    if (frame % 150 === 0) {
+        pet.look.tx = (Math.random() - 0.5) * 2;
+        pet.look.ty = (Math.random() - 0.5) * 1.2;
+    }
+    pet.look.x += (pet.look.tx - pet.look.x) * 0.06;
+    pet.look.y += (pet.look.ty - pet.look.y) * 0.06;
+    pet.head = pet.look.x;
+    
+    pet.blinkTimer--;
+    if (pet.blinkTimer <= 0 && !pet.blinking) {
+        pet.blinking = true;
+        pet.blinkTimer = 10;
+    }
+    if (pet.blinking && pet.blinkTimer <= 0) {
+        pet.blinking = false;
+        pet.blinkTimer = mood === 'sleepy' ? 80 : 180 + Math.random() * 120;
+    }
+}
+
+// ========== RENDER ==========
+function render() {
+    frame++;
+    update();
+    
+    ctx.clearRect(0, 0, W, H);
+    drawScene();
+    
+    switch (petType) {
+        case 'cat': drawCat(); break;
+        case 'dog': drawDog(); break;
+        case 'frog': drawFrog(); break;
+        case 'beaver': drawBeaver(); break;
+    }
+    
+    postProcess();
+    requestAnimationFrame(render);
+}
+
+render();
+</script>
+</body>
+</html>

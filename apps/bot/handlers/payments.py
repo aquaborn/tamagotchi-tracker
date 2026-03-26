@@ -2,13 +2,16 @@
 Обработчик платежей через Telegram Stars
 """
 from aiogram import Router, types, F
-from aiogram.types import LabeledPrice, PreCheckoutQuery
+from aiogram.types import LabeledPrice, PreCheckoutQuery, WebAppInfo
 import logging
 import httpx
 
 logger = logging.getLogger(__name__)
 
 router = Router()
+
+# Mini App URL
+MINI_APP_URL = "https://tests-kernel-athens-salem.trycloudflare.com"
 
 # Цены на товары в звёздах
 STAR_PRICES = {
@@ -49,111 +52,7 @@ async def send_invoice(message: types.Message, product_id: str):
     )
 
 
-@router.pre_checkout_query()
-async def process_pre_checkout(pre_checkout_query: PreCheckoutQuery):
-    """Подтверждение предоплаты"""
-    await pre_checkout_query.answer(ok=True)
-
-
-@router.message(F.successful_payment)
-async def process_successful_payment(message: types.Message):
-    """Обработка успешной оплаты"""
-    payment = message.successful_payment
-    product_id = payment.invoice_payload
-    user_id = message.from_user.id
-    
-    logger.info(f"Payment received: user={user_id}, product={product_id}, stars={payment.total_amount}")
-    
-    if product_id not in STAR_PRICES:
-        await message.answer("❌ Ошибка: неизвестный товар")
-        return
-    
-    product = STAR_PRICES[product_id]
-    
-    try:
-        # Отправляем запрос в API для выдачи покупки
-        async with httpx.AsyncClient() as client:
-            barrel_info = ""
-            
-            # Если это VPN пакет
-            if product_id.startswith("vpn_"):
-                response = await client.post(
-                    f"{API_URL}/v1/rewards/add-vpn-hours",
-                    json={
-                        "user_id": user_id,
-                        "hours": product["hours"],
-                        "reason": f"purchase_{product_id}"
-                    }
-                )
-            # Если это покупка внутриигровых монет
-            elif product_id.startswith("coins_"):
-                coins_amount = product["coins"]
-                response = await client.post(
-                    f"{API_URL}/v1/rewards/stars/add",
-                    json={
-                        "amount": coins_amount,
-                        "telegram_payment_id": payment.telegram_payment_charge_id
-                    },
-                    headers={"X-User-Id": str(user_id)}
-                )
-                if response.status_code == 200:
-                    data = response.json()
-                    await message.answer(
-                        f"✅ Оплата успешна!\n\n"
-                        f"🌟 Вы получили: <b>{coins_amount} ⭐ монет</b>\n"
-                        f"💰 Новый баланс: <b>{data.get('new_balance', 0)} ⭐</b>\n\n"
-                        f"Спасибо за покупку! 🙏",
-                        parse_mode="HTML"
-                    )
-                    return
-            else:
-                # Покупка предмета из магазина
-                response = await client.post(
-                    f"{API_URL}/v1/shop/confirm-purchase",
-                    params={
-                        "item_id": product.get("item_id", 1),
-                        "quantity": 1,
-                        "telegram_payment_id": payment.telegram_payment_charge_id
-                    },
-                    headers={"X-User-Id": str(user_id)}
-                )
-                
-                # Проверяем бочку
-                if response.status_code == 200:
-                    data = response.json()
-                    barrel = data.get("barrel", {})
-                    if barrel.get("filled"):
-                        barrel_info = (
-                            f"\n\n🛢️ <b>БОЧКА ЗАПОЛНЕНА!</b>\n"
-                            f"🎁 Награда: <b>1 МЕСЯЦ VPN!</b>"
-                        )
-                    else:
-                        progress = barrel.get("progress", 0)
-                        barrel_info = f"\n\n🛢️ Бочка: {progress}/100"
-            
-            if response.status_code == 200:
-                await message.answer(
-                    f"✅ Оплата успешна!\n\n"
-                    f"🎁 Вы получили: {product['label']}\n"
-                    f"⭐ Потрачено: {product['stars']} звёзд"
-                    f"{barrel_info}\n\n"
-                    f"Спасибо за покупку! 🙏",
-                    parse_mode="HTML"
-                )
-            else:
-                logger.error(f"API error: {response.status_code} - {response.text}")
-                await message.answer(
-                    f"⚠️ Оплата прошла, но возникла ошибка при активации.\n"
-                    f"Напишите в поддержку с этим ID: {payment.telegram_payment_charge_id}"
-                )
-                
-    except Exception as e:
-        logger.error(f"Payment processing error: {e}")
-        await message.answer(
-            f"⚠️ Ошибка обработки платежа.\n"
-            f"ID платежа: {payment.telegram_payment_charge_id}\n"
-            f"Обратитесь в поддержку."
-        )
+# NOTE: pre_checkout_query and successful_payment handlers are in start.py
 
 
 @router.message(F.text == "🛢️ Бочка")
@@ -206,7 +105,7 @@ async def show_shop_menu(message: types.Message):
             [types.InlineKeyboardButton(text="⚡ Бусты", callback_data="shop_boosts")],
             [types.InlineKeyboardButton(text="👑 Премиум предметы", callback_data="shop_premium")],
             [types.InlineKeyboardButton(text="🛢️ Бочка", callback_data="shop_barrel")],
-            [types.InlineKeyboardButton(text="🎮 Открыть Mini App", callback_data="open_app")],
+            [types.InlineKeyboardButton(text="🎮 Открыть Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
         ]
     )
     
@@ -320,23 +219,23 @@ async def show_vpn_products(callback: types.CallbackQuery):
     """Показать VPN пакеты"""
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="🛡️ 3 дня - 30⭐", callback_data="buy_vpn_3days")],
-            [types.InlineKeyboardButton(text="🔐 1 неделя - 60⭐", callback_data="buy_vpn_1week")],
-            [types.InlineKeyboardButton(text="🏰 2 недели - 100⭐", callback_data="buy_vpn_2weeks")],
-            [types.InlineKeyboardButton(text="🚀 1 месяц - 180⭐", callback_data="buy_vpn_1month")],
+            [types.InlineKeyboardButton(text="🛡️ 3 дня - 30⭐", callback_data="buy_shop_vpn_3days")],
+            [types.InlineKeyboardButton(text="🔐 1 неделя - 60⭐", callback_data="buy_shop_vpn_1week")],
+            [types.InlineKeyboardButton(text="🏰 2 недели - 100⭐", callback_data="buy_shop_vpn_2weeks")],
+            [types.InlineKeyboardButton(text="🚀 1 месяц - 180⭐", callback_data="buy_shop_vpn_1month")],
             [types.InlineKeyboardButton(text="◀️ Назад", callback_data="shop_back")],
         ]
     )
     
     await callback.message.edit_text(
-        "🛡️ **VPN Пакеты**\n\n"
+        "🛡️ <b>VPN Пакеты</b>\n\n"
         "Выберите пакет VPN доступа:\n\n"
-        "• 3 дня - **30** ⭐\n"
-        "• 1 неделя - **60** ⭐\n"
-        "• 2 недели - **100** ⭐\n"
-        "• 1 месяц - **180** ⭐",
+        "• 3 дня - <b>30</b> ⭐\n"
+        "• 1 неделя - <b>60</b> ⭐\n"
+        "• 2 недели - <b>100</b> ⭐\n"
+        "• 1 месяц - <b>180</b> ⭐",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -345,20 +244,20 @@ async def show_boost_products(callback: types.CallbackQuery):
     """Показать бусты"""
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="⭐ XP x2 (24ч) - 50⭐", callback_data="buy_xp_boost_x2")],
-            [types.InlineKeyboardButton(text="🌟 XP x3 (12ч) - 75⭐", callback_data="buy_xp_boost_x3")],
-            [types.InlineKeyboardButton(text="🤖 Автокормушка (7д) - 100⭐", callback_data="buy_auto_feeder")],
+            [types.InlineKeyboardButton(text="⭐ XP x2 (24ч) - 50⭐", callback_data="buy_shop_xp_boost_x2")],
+            [types.InlineKeyboardButton(text="🌟 XP x3 (12ч) - 75⭐", callback_data="buy_shop_xp_boost_x3")],
+            [types.InlineKeyboardButton(text="🤖 Автокормушка (7д) - 100⭐", callback_data="buy_shop_auto_feeder")],
             [types.InlineKeyboardButton(text="◀️ Назад", callback_data="shop_back")],
         ]
     )
     
     await callback.message.edit_text(
-        "⚡ **Бусты**\n\n"
-        "• XP Буст x2 (24 часа) - **50** ⭐\n"
-        "• XP Буст x3 (12 часов) - **75** ⭐\n"
-        "• Автокормушка (7 дней) - **100** ⭐",
+        "⚡ <b>Бусты</b>\n\n"
+        "• XP Буст x2 (24 часа) - <b>50</b> ⭐\n"
+        "• XP Буст x3 (12 часов) - <b>75</b> ⭐\n"
+        "• Автокормушка (7 дней) - <b>100</b> ⭐",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -367,17 +266,17 @@ async def show_premium_products(callback: types.CallbackQuery):
     """Показать премиум предметы"""
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
-            [types.InlineKeyboardButton(text="👑 Корона (+25% XP) - 150⭐", callback_data="buy_crown")],
+            [types.InlineKeyboardButton(text="👑 Корона (+25% XP) - 150⭐", callback_data="buy_shop_crown")],
             [types.InlineKeyboardButton(text="◀️ Назад", callback_data="shop_back")],
         ]
     )
     
     await callback.message.edit_text(
-        "👑 **Премиум предметы**\n\n"
-        "• Королевская корона - **150** ⭐\n"
-        "  _+25% к получаемому опыту навсегда_",
+        "👑 <b>Премиум предметы</b>\n\n"
+        "• Королевская корона - <b>150</b> ⭐\n"
+        "  <i>+25% к получаемому опыту навсегда</i>",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
@@ -386,24 +285,28 @@ async def back_to_shop(callback: types.CallbackQuery):
     """Назад в главное меню магазина"""
     keyboard = types.InlineKeyboardMarkup(
         inline_keyboard=[
+            [types.InlineKeyboardButton(text="⭐ Купить монеты", callback_data="shop_coins")],
             [types.InlineKeyboardButton(text="🛡️ VPN пакеты", callback_data="shop_vpn")],
             [types.InlineKeyboardButton(text="⚡ Бусты", callback_data="shop_boosts")],
             [types.InlineKeyboardButton(text="👑 Премиум предметы", callback_data="shop_premium")],
+            [types.InlineKeyboardButton(text="🛢️ Бочка", callback_data="shop_barrel")],
+            [types.InlineKeyboardButton(text="🎮 Открыть Mini App", web_app=WebAppInfo(url=MINI_APP_URL))],
         ]
     )
     
     await callback.message.edit_text(
-        "🛒 **Магазин**\n\n"
-        "Выберите категорию товаров:",
+        "🛒 <b>Магазин</b>\n\n"
+        "Выберите категорию товаров:\n\n"
+        "🛢️ <i>100 покупок = месяц VPN бесплатно!</i>",
         reply_markup=keyboard,
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
-@router.callback_query(F.data.startswith("buy_"))
+@router.callback_query(F.data.startswith("buy_shop_"))
 async def process_buy(callback: types.CallbackQuery):
     """Обработка покупки"""
-    product_id = callback.data.replace("buy_", "")
+    product_id = callback.data.replace("buy_shop_", "")
     
     if product_id not in STAR_PRICES:
         await callback.answer("❌ Товар не найден", show_alert=True)

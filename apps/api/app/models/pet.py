@@ -32,7 +32,7 @@ class PetModel(Base):
     generation = Column(Integer, default=0)  # 0 = оригинал, 1+ = потомки
     
     # Гены (JSON): {"color": "orange", "pattern": "stripes", "eyes": "blue", "trait1": "fast", ...}
-    genes = Column(JSON, default={})
+    genes = Column(JSON, default=dict)
     
     # Родители (для родословной)
     parent1_id = Column(Integer, nullable=True)  # ID первого родителя
@@ -48,7 +48,7 @@ class PetModel(Base):
     nft_minted_at = Column(DateTime(timezone=True), nullable=True)
     
     # Редкие трейты (мутации)
-    mutations = Column(JSON, default=[])  # ["золотой блеск", "крылья"]
+    mutations = Column(JSON, default=list)  # ["золотой блеск", "крылья"]
     
     # Бонусы от генов
     stat_multiplier = Column(Float, default=1.0)  # Множитель XP/токенов

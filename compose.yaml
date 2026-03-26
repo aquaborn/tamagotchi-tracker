@@ -29,6 +29,7 @@ services:
       - DATABASE_URL=postgresql+asyncpg://user:password@db:5432/tamagotchi
     depends_on:
       - db
+      - api
     volumes:
       - ./apps/bot:/app
       - ./packages/core:/app/packages/core

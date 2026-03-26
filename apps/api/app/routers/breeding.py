@@ -12,7 +12,7 @@ import logging
 from app.deps.db import get_db
 from app.deps.auth import get_current_user_id
 from app.models.user import User
-from app.models.pet import PetModel as Pet
+from app.models.pet import PetModel as Pet, PetModel
 from app.services.genetics import (
     generate_genes, calculate_overall_rarity, breed_pets,
     can_breed, get_breeding_cooldown, get_stat_multiplier,
@@ -145,7 +145,7 @@ async def get_available_partners(
         .join(User, Pet.user_id == User.telegram_id)
         .where(
             Pet.user_id != user_id,  # Исключаем себя
-            Pet.breeding_count < 5
+            Pet.breeding_count < max(MAX_BREEDING_COUNT.values())
         )
         .order_by(Pet.level.desc())
         .limit(limit)
@@ -257,29 +257,46 @@ async def breed_with_partner(
         partner_rarity
     )
     
-    # Списываем звёзды
-    user.stars_balance -= cost
-    
-    # Обновляем cooldown для моего питомца
-    cooldown = get_breeding_cooldown(my_pet.rarity or "common")
-    my_pet.breeding_count = (my_pet.breeding_count or 0) + 1
-    my_pet.breeding_cooldown_until = datetime.now(timezone.utc) + cooldown
-    
-    # Обновляем партнёра (только если это игрок, не NPC)
-    if partner_pet and not is_npc:
-        partner_cooldown = get_breeding_cooldown(partner_rarity)
-        partner_pet.breeding_count = (partner_pet.breeding_count or 0) + 1
-        partner_pet.breeding_cooldown_until = datetime.now(timezone.utc) + partner_cooldown
-    
     # Определяем поколение потомка
     partner_gen = partner_pet.generation if partner_pet else 0
     child_generation = max(my_pet.generation or 0, partner_gen or 0) + 1
     
-    # Создаём нового питомца (яйцо/потомок)
-    # Пока сохраняем данные о потомке, но не создаём отдельную запись
-    # (в будущем можно добавить систему яиц или вторых питомцев)
-    
-    await db.commit()
+    try:
+        # Списываем звёзды
+        user.stars_balance -= cost
+        
+        # Обновляем cooldown для моего питомца
+        cooldown = get_breeding_cooldown(my_pet.rarity or "common")
+        my_pet.breeding_count = (my_pet.breeding_count or 0) + 1
+        my_pet.breeding_cooldown_until = datetime.now(timezone.utc) + cooldown
+        
+        # Обновляем партнёра (только если это игрок, не NPC)
+        if partner_pet and not is_npc:
+            partner_cooldown = get_breeding_cooldown(partner_rarity)
+            partner_pet.breeding_count = (partner_pet.breeding_count or 0) + 1
+            partner_pet.breeding_cooldown_until = datetime.now(timezone.utc) + partner_cooldown
+        
+        # Создаём и сохраняем нового питомца (потомок)
+        child_pet = PetModel(
+            user_id=my_pet.user_id,
+            pet_type=child_genes.get("pet_type", my_pet.pet_type),
+            genes=child_genes,
+            rarity=child_rarity,
+            mutations=mutations,
+            generation=child_generation,
+            level=1,
+            experience=0,
+            parent1_id=my_pet.id,
+            parent2_id=partner_pet.id if partner_pet else None,
+            stat_multiplier=get_stat_multiplier(child_rarity, mutations)
+        )
+        db.add(child_pet)
+        
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"Breeding transaction failed for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка бридинга")
     
     logger.info(f"Breeding success: user {user_id}, rarity {child_rarity}, mutations {mutations}")
     
@@ -370,15 +387,20 @@ async def mint_pet_nft(
             detail=f"Недостаточно звёзд! Нужно: {cost} ⭐"
         )
     
-    # Списываем звёзды
-    user.stars_balance -= cost
-    
-    # Помечаем как сминченный (реальный минт будет через смарт-контракт)
-    pet.nft_minted = True
-    pet.nft_minted_at = datetime.now(timezone.utc)
-    # nft_address будет установлен после реального минтинга через контракт
-    
-    await db.commit()
+    try:
+        # Списываем звёзды
+        user.stars_balance -= cost
+        
+        # Помечаем как сминченный (реальный минт будет через смарт-контракт)
+        pet.nft_minted = True
+        pet.nft_minted_at = datetime.now(timezone.utc)
+        # nft_address будет установлен после реального минтинга через контракт
+        
+        await db.commit()
+    except Exception as e:
+        await db.rollback()
+        logger.error(f"NFT mint transaction failed for user {user_id}, pet {pet.id}: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка минтинга NFT")
     
     metadata = generate_nft_metadata(
         pet_id=pet.id,
